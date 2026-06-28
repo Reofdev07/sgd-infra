@@ -51,4 +51,19 @@ check "Frontend SPA"     "curl -sfk https://demo.aviliontech.com/ | grep -q 'id=
 echo ""
 echo "Resultado: $PASS OK, $FAIL FAIL"
 [ "$FAIL" -eq 0 ] && echo "Todos los servicios están saludables." || echo "Hay servicios con problemas."
+
+# --- Telegram alert si hay servicios caídos ---
+TELEGRAM_BOT_TOKEN="${TELEGRAM_BOT_TOKEN:-8706852433:AAF6KVl9fzbehgmJrClbntquTwAdXen7r_U}"
+TELEGRAM_CHAT_ID="${TELEGRAM_CHAT_ID:-5096050646}"
+
+if [ "$FAIL" -gt 0 ]; then
+    MSG="🚨 *SGD ALERTA*: $FAIL servicios caídos
+$(date)
+✅ OK: $PASS  |  ❌ FAIL: $FAIL"
+    curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
+        -d "chat_id=$TELEGRAM_CHAT_ID" \
+        -d "text=$MSG" \
+        -d "parse_mode=Markdown" > /dev/null 2>&1
+fi
+
 exit $FAIL

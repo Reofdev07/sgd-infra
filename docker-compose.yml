@@ -6,7 +6,6 @@ services:
   # ============================================
   oracle-xe:
     image: gvenzl/oracle-xe:21-faststart
-    container_name: sgd-oracle
     restart: always
     environment:
       ORACLE_PASSWORD: ${ORACLE_PASSWORD:-StrongPassword123!}
@@ -28,7 +27,6 @@ services:
   # ============================================
   redis:
     image: redis:7-alpine
-    container_name: sgd-redis
     restart: always
     command: redis-server --appendonly yes ${REDIS_PASSWORD:+--requirepass ${REDIS_PASSWORD}}
     volumes:
@@ -48,7 +46,6 @@ services:
     build:
       context: ./php
       dockerfile: Dockerfile
-    container_name: sgd-app
     restart: unless-stopped
     working_dir: /var/www/html
     volumes:
@@ -116,7 +113,6 @@ services:
     build:
       context: ./php
       dockerfile: Dockerfile
-    container_name: sgd-worker-default
     restart: unless-stopped
     working_dir: /var/www/html
     volumes:
@@ -165,7 +161,6 @@ services:
     build:
       context: ./php
       dockerfile: Dockerfile
-    container_name: sgd-worker-pqrsd
     restart: unless-stopped
     working_dir: /var/www/html
     volumes:
@@ -214,7 +209,6 @@ services:
     build:
       context: ./php
       dockerfile: Dockerfile
-    container_name: sgd-scheduler
     restart: unless-stopped
     working_dir: /var/www/html
     volumes:
@@ -248,7 +242,6 @@ services:
     build:
       context: ./php
       dockerfile: Dockerfile
-    container_name: sgd-reverb
     restart: unless-stopped
     working_dir: /var/www/html
     volumes:
@@ -284,9 +277,8 @@ services:
   # ============================================
   osai:
     build:
-      context: ${OSAI_PATH:-../OSAI}
+      context: ${OSAI_PATH:-../osai}
       dockerfile: Dockerfile
-    container_name: sgd-osai
     restart: unless-stopped
     environment:
       - APP_NAME=Osai
@@ -322,7 +314,7 @@ services:
       - WEBHOOK_SECRET=${WEBHOOK_SECRET}
     volumes:
       - osai_data:/app/data
-      - ${OSAI_CREDENTIALS_PATH:-../OSAI/credentials}:/app/credentials:ro
+      - ${OSAI_CREDENTIALS_PATH:-../osai/credentials}:/app/credentials:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/info"]
       interval: 30s
@@ -337,7 +329,6 @@ services:
   # ============================================
   nginx:
     image: nginx:1.27-alpine
-    container_name: sgd-nginx
     restart: always
     ports:
       - "80:80"
@@ -347,41 +338,10 @@ services:
       - ${FRONTEND_DIST_PATH:-../SGD-Front/dist/spa}:/usr/share/nginx/html:ro
       - ${LARAVEL_PATH:-../SDG-Back-api}/public:/var/www/html/public:ro
       - app_storage:/var/www/html/storage:ro
-      - certbot_certs:/etc/letsencrypt:ro
-      - certbot_www:/var/www/certbot:ro
+
     depends_on:
       - app
       - reverb
-    networks:
-      - sgd-network
-
-  # ============================================
-  # Certbot (Let's Encrypt SSL — solo en producción)
-  # Uso: docker compose run --rm certbot certonly --webroot -w /var/www/certbot -d tudominio.com
-  # ============================================
-  certbot:
-    image: certbot/certbot:latest
-    container_name: sgd-certbot
-    profiles:
-      - ssl
-    volumes:
-      - certbot_certs:/etc/letsencrypt
-      - certbot_www:/var/www/certbot
-    networks:
-      - sgd-network
-
-  # ============================================
-  # Portainer (Dashboard visual - SOLO via SSH tunnel)
-  # ============================================
-  portainer:
-    image: portainer/portainer-ce:latest
-    container_name: sgd-portainer
-    restart: unless-stopped
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - portainer_data:/data
-    ports:
-      - "127.0.0.1:9001:9000"
     networks:
       - sgd-network
 
@@ -390,9 +350,6 @@ volumes:
   redis_data:
   app_storage:
   osai_data:
-  certbot_certs:
-  certbot_www:
-  portainer_data:
 
 networks:
   sgd-network:
