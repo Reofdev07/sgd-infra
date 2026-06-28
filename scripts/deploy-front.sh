@@ -57,7 +57,11 @@ cd - >/dev/null
 # --- Nginx: bind mount fix ---
 # npm run build borra y recrea dist/spa/ (cambia el inodo),
 # rompiendo el bind mount de Docker. Hay que recrear el contenedor.
-COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.dockploy.yml}"
+if [ -f docker-compose.dockploy.yml ]; then
+  COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.dockploy.yml}"
+else
+  COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.yml}"
+fi
 echo "Recreando nginx para refrescar bind mount (usando $COMPOSE_FILE)..."
 docker compose -f "$COMPOSE_FILE" up -d --force-recreate nginx
 

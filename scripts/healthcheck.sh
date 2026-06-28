@@ -3,7 +3,11 @@
 # Ejecutar desde sgd-infra/
 set -e
 
-COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.dockploy.yml}"
+if [ -f docker-compose.dockploy.yml ]; then
+  COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.dockploy.yml}"
+else
+  COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.yml}"
+fi
 export COMPOSE_FILE
 
 echo "=== Health Check SGD ==="
