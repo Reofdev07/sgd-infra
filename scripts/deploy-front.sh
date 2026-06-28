@@ -59,8 +59,7 @@ cd - >/dev/null
 # rompiendo el bind mount de Docker. Hay que recrear el contenedor.
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.dockploy.yml}"
 echo "Recreando nginx para refrescar bind mount (usando $COMPOSE_FILE)..."
-docker compose -f "$COMPOSE_FILE" rm -f nginx 2>/dev/null || true
-docker compose -f "$COMPOSE_FILE" up -d nginx
+docker compose -f "$COMPOSE_FILE" up -d --force-recreate nginx
 
 echo ""
 echo "=== Frontend deploy completado ==="
