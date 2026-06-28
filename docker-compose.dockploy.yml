@@ -41,6 +41,7 @@ services:
   # Laravel PHP-FPM (API principal)
   # ============================================
   app:
+    image: sgd-infra-app:latest
     build:
       context: ./php
       dockerfile: Dockerfile
@@ -108,6 +109,7 @@ services:
   # Laravel Queue Worker (cola default)
   # ============================================
   worker-default:
+    image: sgd-infra-app:latest
     build:
       context: ./php
       dockerfile: Dockerfile
@@ -156,6 +158,7 @@ services:
   # Laravel Queue Worker (cola pqrsd-ai)
   # ============================================
   worker-pqrsd:
+    image: sgd-infra-app:latest
     build:
       context: ./php
       dockerfile: Dockerfile
@@ -204,6 +207,7 @@ services:
   # Laravel Scheduler (cron interno)
   # ============================================
   scheduler:
+    image: sgd-infra-app:latest
     build:
       context: ./php
       dockerfile: Dockerfile
@@ -237,6 +241,7 @@ services:
   # Laravel Reverb (WebSocket server)
   # ============================================
   reverb:
+    image: sgd-infra-app:latest
     build:
       context: ./php
       dockerfile: Dockerfile
@@ -274,6 +279,7 @@ services:
   # OSAI FastAPI (microservicio de IA)
   # ============================================
   osai:
+    image: sgd-infra-osai:latest
     build:
       context: ${OSAI_PATH:-../osai}
       dockerfile: Dockerfile
