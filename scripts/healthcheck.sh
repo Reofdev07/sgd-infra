@@ -3,6 +3,9 @@
 # Ejecutar desde sgd-infra/
 set -e
 
+COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.dockploy.yml}"
+export COMPOSE_FILE
+
 echo "=== Health Check SGD ==="
 PASS=0
 FAIL=0
@@ -32,14 +35,14 @@ check "Nginx"            "docker compose ps nginx | grep -q 'Up'"
 
 echo ""
 
-# Health endpoint de Laravel (verifica BD, Redis, Reverb)
-check "API Health"       "curl -sf http://localhost/api/health"
+# Health endpoint de Laravel via HTTPS (Traefik → nginx → app)
+check "API Health"       "curl -sfk https://demo.aviliontech.com/api/health"
 
-# OSAI info
+# OSAI info (via red interna de docker compose)
 check "OSAI /info"       "docker compose exec -T osai curl -sf http://localhost:8000/info"
 
-# Frontend (sirve index.html con app mount)
-check "Frontend SPA"     "curl -sf http://localhost/ | grep -q 'id=q-app'"
+# Frontend via HTTPS (Traefik → nginx → SPA)
+check "Frontend SPA"     "curl -sfk https://demo.aviliontech.com/ | grep -q 'id=q-app'"
 
 echo ""
 echo "Resultado: $PASS OK, $FAIL FAIL"
