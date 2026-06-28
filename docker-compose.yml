@@ -1,0 +1,399 @@
+name: sgd
+
+services:
+  # ============================================
+  # Base de datos Oracle XE
+  # ============================================
+  oracle-xe:
+    image: gvenzl/oracle-xe:21-faststart
+    container_name: sgd-oracle
+    restart: always
+    environment:
+      ORACLE_PASSWORD: ${ORACLE_PASSWORD:-StrongPassword123!}
+      APP_USER: ${DB_USERNAME:-SGD_MR7}
+      APP_USER_PASSWORD: ${DB_PASSWORD:-sgd123}
+    volumes:
+      - oracle_data:/opt/oracle/oradata
+    healthcheck:
+      test: ["CMD-SHELL", "echo 'SELECT 1 FROM DUAL;' | sqlplus -S ${DB_USERNAME:-SGD_MR7}/${DB_PASSWORD:-sgd123}@localhost/XEPDB1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+    networks:
+      - sgd-network
+
+  # ============================================
+  # Redis (Cache + Reverb + Sesiones)
+  # ============================================
+  redis:
+    image: redis:7-alpine
+    container_name: sgd-redis
+    restart: always
+    command: redis-server --appendonly yes ${REDIS_PASSWORD:+--requirepass ${REDIS_PASSWORD}}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - sgd-network
+
+  # ============================================
+  # Laravel PHP-FPM (API principal)
+  # ============================================
+  app:
+    build:
+      context: ./php
+      dockerfile: Dockerfile
+    container_name: sgd-app
+    restart: unless-stopped
+    working_dir: /var/www/html
+    volumes:
+      - ${LARAVEL_PATH:-../SDG-Back-api}:/var/www/html
+      - app_storage:/var/www/html/storage
+    environment:
+      - DB_CONNECTION=oracle
+      - DB_HOST=oracle-xe
+      - DB_PORT=1521
+      - DB_DATABASE=XEPDB1
+      - DB_USERNAME=${DB_USERNAME:-SGD_MR7}
+      - DB_PASSWORD=${DB_PASSWORD:-sgd123}
+      - DB_SERVICE_NAME=XEPDB1
+      - REDIS_HOST=redis
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - REDIS_PORT=6379
+      - CACHE_DRIVER=redis
+      - QUEUE_CONNECTION=database
+      - SESSION_DRIVER=database
+      - BROADCAST_DRIVER=reverb
+      - APP_NAME=${APP_NAME:-SGD}
+      - APP_ENV=production
+      - APP_KEY=${APP_KEY}
+      - APP_DEBUG=false
+      - APP_URL=https://${DOMAIN:-localhost}
+      - FRONTEND_URL=https://${DOMAIN:-localhost}
+      - FASTAPI_URL=http://osai:8000/api
+      - FASTAPI_TOKEN=${OSAI_API_TOKEN}
+      - REVERB_APP_KEY=${REVERB_APP_KEY}
+      - REVERB_APP_SECRET=${REVERB_APP_SECRET}
+      - REVERB_APP_ID=${REVERB_APP_ID}
+      - REVERB_HOST=${DOMAIN:-localhost}
+      - REVERB_PORT=443
+      - REVERB_SCHEME=https
+      - REVERB_SERVER_HOST=reverb
+      - REVERB_SERVER_PORT=8080
+      - B2_KEY_ID=${B2_KEY_ID}
+      - B2_APPLICATION_KEY=${B2_APPLICATION_KEY}
+      - B2_BUCKET=${B2_BUCKET:-sgd-mr7}
+      - B2_ENDPOINT=${B2_ENDPOINT:-https://s3.us-east-005.backblazeb2.com}
+      - B2_REGION=${B2_REGION:-us-east-005}
+      - FILESYSTEM_CLOUD=b2
+      - FILESYSTEM_DISK=local
+      - PASSPORT_PERSONAL_ACCESS_CLIENT_ID=${PASSPORT_CLIENT_ID:-2}
+      - PASSPORT_PERSONAL_ACCESS_CLIENT_SECRET=${PASSPORT_CLIENT_SECRET}
+      - MAIL_MAILER=${MAIL_MAILER:-log}
+      - MAIL_HOST=${MAIL_HOST:-sandbox.smtp.mailtrap.io}
+      - MAIL_PORT=${MAIL_PORT:-2525}
+      - MAIL_USERNAME=${MAIL_USERNAME}
+      - MAIL_PASSWORD=${MAIL_PASSWORD}
+      - MAIL_FROM_ADDRESS=${MAIL_FROM_ADDRESS:-noreply@${DOMAIN:-localhost}}
+      - MAIL_FROM_NAME=${APP_NAME:-SGD}
+    depends_on:
+      oracle-xe:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - sgd-network
+
+  # ============================================
+  # Laravel Queue Worker (cola default)
+  # ============================================
+  worker-default:
+    build:
+      context: ./php
+      dockerfile: Dockerfile
+    container_name: sgd-worker-default
+    restart: unless-stopped
+    working_dir: /var/www/html
+    volumes:
+      - ${LARAVEL_PATH:-../SDG-Back-api}:/var/www/html
+      - app_storage:/var/www/html/storage
+    command: php artisan queue:work --queue=default --sleep=3 --tries=3 --max-time=3600
+    environment:
+      - DB_CONNECTION=oracle
+      - DB_HOST=oracle-xe
+      - DB_PORT=1521
+      - DB_DATABASE=XEPDB1
+      - DB_USERNAME=${DB_USERNAME:-SGD_MR7}
+      - DB_PASSWORD=${DB_PASSWORD:-sgd123}
+      - DB_SERVICE_NAME=XEPDB1
+      - REDIS_HOST=redis
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - REDIS_PORT=6379
+      - CACHE_DRIVER=redis
+      - QUEUE_CONNECTION=database
+      - BROADCAST_DRIVER=reverb
+      - APP_KEY=${APP_KEY}
+      - APP_URL=https://${DOMAIN:-localhost}
+      - REVERB_APP_KEY=${REVERB_APP_KEY}
+      - REVERB_APP_SECRET=${REVERB_APP_SECRET}
+      - REVERB_APP_ID=${REVERB_APP_ID}
+      - REVERB_SERVER_HOST=reverb
+      - REVERB_SERVER_PORT=8080
+      - FASTAPI_URL=http://osai:8000/api
+      - FASTAPI_TOKEN=${OSAI_API_TOKEN}
+      - B2_KEY_ID=${B2_KEY_ID}
+      - B2_APPLICATION_KEY=${B2_APPLICATION_KEY}
+      - B2_BUCKET=${B2_BUCKET:-sgd-mr7}
+      - B2_ENDPOINT=${B2_ENDPOINT:-https://s3.us-east-005.backblazeb2.com}
+      - B2_REGION=${B2_REGION:-us-east-005}
+      - FILESYSTEM_CLOUD=b2
+    depends_on:
+      app:
+        condition: service_started
+    networks:
+      - sgd-network
+
+  # ============================================
+  # Laravel Queue Worker (cola pqrsd-ai)
+  # ============================================
+  worker-pqrsd:
+    build:
+      context: ./php
+      dockerfile: Dockerfile
+    container_name: sgd-worker-pqrsd
+    restart: unless-stopped
+    working_dir: /var/www/html
+    volumes:
+      - ${LARAVEL_PATH:-../SDG-Back-api}:/var/www/html
+      - app_storage:/var/www/html/storage
+    command: php artisan queue:work --queue=pqrsd-ai --sleep=3 --tries=3 --max-time=3600
+    environment:
+      - DB_CONNECTION=oracle
+      - DB_HOST=oracle-xe
+      - DB_PORT=1521
+      - DB_DATABASE=XEPDB1
+      - DB_USERNAME=${DB_USERNAME:-SGD_MR7}
+      - DB_PASSWORD=${DB_PASSWORD:-sgd123}
+      - DB_SERVICE_NAME=XEPDB1
+      - REDIS_HOST=redis
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - REDIS_PORT=6379
+      - CACHE_DRIVER=redis
+      - QUEUE_CONNECTION=database
+      - BROADCAST_DRIVER=reverb
+      - APP_KEY=${APP_KEY}
+      - APP_URL=https://${DOMAIN:-localhost}
+      - REVERB_APP_KEY=${REVERB_APP_KEY}
+      - REVERB_APP_SECRET=${REVERB_APP_SECRET}
+      - REVERB_APP_ID=${REVERB_APP_ID}
+      - REVERB_SERVER_HOST=reverb
+      - REVERB_SERVER_PORT=8080
+      - FASTAPI_URL=http://osai:8000/api
+      - FASTAPI_TOKEN=${OSAI_API_TOKEN}
+      - B2_KEY_ID=${B2_KEY_ID}
+      - B2_APPLICATION_KEY=${B2_APPLICATION_KEY}
+      - B2_BUCKET=${B2_BUCKET:-sgd-mr7}
+      - B2_ENDPOINT=${B2_ENDPOINT:-https://s3.us-east-005.backblazeb2.com}
+      - B2_REGION=${B2_REGION:-us-east-005}
+      - FILESYSTEM_CLOUD=b2
+    depends_on:
+      app:
+        condition: service_started
+    networks:
+      - sgd-network
+
+  # ============================================
+  # Laravel Scheduler (cron interno)
+  # ============================================
+  scheduler:
+    build:
+      context: ./php
+      dockerfile: Dockerfile
+    container_name: sgd-scheduler
+    restart: unless-stopped
+    working_dir: /var/www/html
+    volumes:
+      - ${LARAVEL_PATH:-../SDG-Back-api}:/var/www/html
+      - app_storage:/var/www/html/storage
+    command: php artisan schedule:work --verbose
+    environment:
+      - DB_CONNECTION=oracle
+      - DB_HOST=oracle-xe
+      - DB_PORT=1521
+      - DB_DATABASE=XEPDB1
+      - DB_USERNAME=${DB_USERNAME:-SGD_MR7}
+      - DB_PASSWORD=${DB_PASSWORD:-sgd123}
+      - DB_SERVICE_NAME=XEPDB1
+      - REDIS_HOST=redis
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - REDIS_PORT=6379
+      - CACHE_DRIVER=redis
+      - APP_KEY=${APP_KEY}
+      - APP_URL=https://${DOMAIN:-localhost}
+    depends_on:
+      app:
+        condition: service_started
+    networks:
+      - sgd-network
+
+  # ============================================
+  # Laravel Reverb (WebSocket server)
+  # ============================================
+  reverb:
+    build:
+      context: ./php
+      dockerfile: Dockerfile
+    container_name: sgd-reverb
+    restart: unless-stopped
+    working_dir: /var/www/html
+    volumes:
+      - ${LARAVEL_PATH:-../SDG-Back-api}:/var/www/html
+      - app_storage:/var/www/html/storage
+    command: php artisan reverb:start --host=0.0.0.0 --port=8080
+    environment:
+      - DB_CONNECTION=oracle
+      - DB_HOST=oracle-xe
+      - DB_PORT=1521
+      - DB_DATABASE=XEPDB1
+      - DB_USERNAME=${DB_USERNAME:-SGD_MR7}
+      - DB_PASSWORD=${DB_PASSWORD:-sgd123}
+      - DB_SERVICE_NAME=XEPDB1
+      - REDIS_HOST=redis
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - REDIS_PORT=6379
+      - REVERB_APP_KEY=${REVERB_APP_KEY}
+      - REVERB_APP_SECRET=${REVERB_APP_SECRET}
+      - REVERB_APP_ID=${REVERB_APP_ID}
+      - REVERB_SERVER_HOST=0.0.0.0
+      - REVERB_SERVER_PORT=8080
+    depends_on:
+      app:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    networks:
+      - sgd-network
+
+  # ============================================
+  # OSAI FastAPI (microservicio de IA)
+  # ============================================
+  osai:
+    build:
+      context: ${OSAI_PATH:-../OSAI}
+      dockerfile: Dockerfile
+    container_name: sgd-osai
+    restart: unless-stopped
+    environment:
+      - APP_NAME=Osai
+      - ENVIRONMENT=production
+      - PYTHONPATH=.
+      - API_KEY_TOKEN=${OSAI_API_TOKEN}
+      - WEBHOOK_URL=http://nginx/api/webhooks/fastapi/status-update
+      - PORTAL_WEBHOOK_URL=http://nginx/api/webhooks/osai/pqrsd-analysis
+      - BACKEND_URL=http://nginx
+      - FRONTEND_URL=https://${DOMAIN:-localhost}
+      - AI_SELECTOR=${AI_SELECTOR:-DEEPSEEK}
+      - AI_SELECTOR_EMERGENCY=${AI_SELECTOR_EMERGENCY:-GEMINI}
+      - AI_SELECTOR_VISION=${AI_SELECTOR_VISION:-GEMINI}
+      - MODEL_GEMINI=${MODEL_GEMINI:-gemini-2.5-flash}
+      - MODEL_DEEPSEEK=${MODEL_DEEPSEEK:-deepseek-chat}
+      - MODEL_COHERE=${MODEL_COHERE:-command-r-plus}
+      - MODEL_OPENAI=${MODEL_OPENAI:-gpt-4o}
+      - AI_MODEL_VISION_FALLBACK=${AI_MODEL_VISION_FALLBACK:-qwen/qwen-vl-plus:free}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - CO_API_KEY=${CO_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/gcp-credentials.json
+      - BUCKET_NAME=${B2_BUCKET:-sgd-mr7}
+      - KEY_ID=${B2_KEY_ID}
+      - KEY_NAME=${B2_KEY_NAME:-sgd-mr7}
+      - APPLICATION_KEY=${B2_APPLICATION_KEY}
+      - LANGSMITH_TRACING=${LANGSMITH_TRACING:-false}
+      - LANGSMITH_PROJECT=${LANGSMITH_PROJECT:-Osai}
+      - LANGSMITH_ENDPOINT=${LANGSMITH_ENDPOINT:-https://api.smith.langchain.com}
+      - LANGSMITH_API_KEY=${LANGSMITH_API_KEY}
+      - WEBHOOK_SECRET=${WEBHOOK_SECRET}
+    volumes:
+      - osai_data:/app/data
+      - ${OSAI_CREDENTIALS_PATH:-../OSAI/credentials}:/app/credentials:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/info"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - sgd-network
+
+  # ============================================
+  # Nginx (Reverse Proxy + SSL + Frontend SPA)
+  # ============================================
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: sgd-nginx
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/sgd.conf:/etc/nginx/conf.d/default.conf:ro
+      - ${FRONTEND_DIST_PATH:-../SGD-Front/dist/spa}:/usr/share/nginx/html:ro
+      - ${LARAVEL_PATH:-../SDG-Back-api}/public:/var/www/html/public:ro
+      - app_storage:/var/www/html/storage:ro
+      - certbot_certs:/etc/letsencrypt:ro
+      - certbot_www:/var/www/certbot:ro
+    depends_on:
+      - app
+      - reverb
+    networks:
+      - sgd-network
+
+  # ============================================
+  # Certbot (Let's Encrypt SSL — solo en producción)
+  # Uso: docker compose run --rm certbot certonly --webroot -w /var/www/certbot -d tudominio.com
+  # ============================================
+  certbot:
+    image: certbot/certbot:latest
+    container_name: sgd-certbot
+    profiles:
+      - ssl
+    volumes:
+      - certbot_certs:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+    networks:
+      - sgd-network
+
+  # ============================================
+  # Portainer (Dashboard visual - SOLO via SSH tunnel)
+  # ============================================
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: sgd-portainer
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+    ports:
+      - "127.0.0.1:9001:9000"
+    networks:
+      - sgd-network
+
+volumes:
+  oracle_data:
+  redis_data:
+  app_storage:
+  osai_data:
+  certbot_certs:
+  certbot_www:
+  portainer_data:
+
+networks:
+  sgd-network:
+    driver: bridge

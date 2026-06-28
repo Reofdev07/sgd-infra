@@ -1,0 +1,95 @@
+# docker-compose.override.yml — Override para desarrollo local
+# Reusa el Oracle XE existente del host + imágenes pre-compiladas
+#
+# USO LOCAL:
+#   docker compose up -d redis app worker-default worker-pqrsd scheduler reverb osai nginx
+#
+# Para producción en el VPS: renombra este archivo:
+#   mv docker-compose.override.yml docker-compose.override.yml.bak
+
+services:
+  oracle-xe:
+    restart: "no"
+
+  app:
+    image: sgd-php:latest
+    build: !reset null
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      - DB_HOST=host.docker.internal
+      - DB_PORT=1522
+      - DB_USERNAME=SGD_MR7
+      - DB_PASSWORD=sgd123
+      - DB_SERVICE_NAME=FREEPDB1
+      - APP_ENV=local
+      - APP_DEBUG=true
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  worker-default:
+    image: sgd-php:latest
+    build: !reset null
+    depends_on:
+      app:
+        condition: service_started
+    environment:
+      - DB_HOST=host.docker.internal
+      - DB_PORT=1522
+      - DB_USERNAME=SGD_MR7
+      - DB_PASSWORD=sgd123
+      - DB_SERVICE_NAME=FREEPDB1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  worker-pqrsd:
+    image: sgd-php:latest
+    build: !reset null
+    depends_on:
+      app:
+        condition: service_started
+    environment:
+      - DB_HOST=host.docker.internal
+      - DB_PORT=1522
+      - DB_USERNAME=SGD_MR7
+      - DB_PASSWORD=sgd123
+      - DB_SERVICE_NAME=FREEPDB1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  scheduler:
+    image: sgd-php:latest
+    build: !reset null
+    depends_on:
+      app:
+        condition: service_started
+    environment:
+      - DB_HOST=host.docker.internal
+      - DB_PORT=1522
+      - DB_USERNAME=SGD_MR7
+      - DB_PASSWORD=sgd123
+      - DB_SERVICE_NAME=FREEPDB1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  reverb:
+    image: sgd-php:latest
+    build: !reset null
+    depends_on:
+      app:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    environment:
+      - DB_HOST=host.docker.internal
+      - DB_PORT=1522
+      - DB_USERNAME=SGD_MR7
+      - DB_PASSWORD=sgd123
+      - DB_SERVICE_NAME=FREEPDB1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  osai:
+    image: sgd-osai:latest
+    build: !reset null
