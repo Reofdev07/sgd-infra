@@ -72,6 +72,11 @@ docker compose exec -T app php artisan route:cache
 docker compose exec -T app php artisan view:cache
 docker compose exec -T app php artisan event:cache
 
+# Opcache: limpiar para que los cambios de código se reflejen
+# (opcache.validate_timestamps=0 en producción, no detecta cambios solito)
+echo "Limpiando opcache..."
+docker compose exec -T app php -r 'if (function_exists("opcache_reset")) { opcache_reset(); }'
+
 # Reiniciar workers
 echo "Reiniciando queue workers..."
 docker compose exec -T app php artisan queue:restart || true
