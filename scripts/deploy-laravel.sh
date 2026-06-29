@@ -69,17 +69,18 @@ fi
 echo "Creando symlink de storage..."
 docker compose exec -T app php artisan storage:link || true
 
-# Caches de optimización
+# Opcache: limpiar PRIMERO para que los caches lean los archivos nuevos
+# (opcache.validate_timestamps=0 en producción, no detecta cambios solito)
+echo "Limpiando opcache..."
+docker compose exec -T app php -r 'if (function_exists("opcache_reset")) { opcache_reset(); }'
+
+# Caches de optimización (después de opcache_reset para leer archivos frescos)
 echo "Cacheando configuración, rutas, vistas y eventos..."
+docker compose exec -T app php artisan config:clear
 docker compose exec -T app php artisan config:cache
 docker compose exec -T app php artisan route:cache
 docker compose exec -T app php artisan view:cache
 docker compose exec -T app php artisan event:cache
-
-# Opcache: limpiar para que los cambios de código se reflejen
-# (opcache.validate_timestamps=0 en producción, no detecta cambios solito)
-echo "Limpiando opcache..."
-docker compose exec -T app php -r 'if (function_exists("opcache_reset")) { opcache_reset(); }'
 
 # Reiniciar workers
 echo "Reiniciando queue workers..."
