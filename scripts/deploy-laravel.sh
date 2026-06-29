@@ -32,6 +32,10 @@ docker compose exec -T app php artisan db:seed --force
 
 # Storage permissions (PHP-FPM corre como www-data)
 echo "Corrigiendo permisos de storage..."
+docker compose exec -T app mkdir -p /var/www/html/storage/framework/views \
+  /var/www/html/storage/framework/cache/data \
+  /var/www/html/storage/framework/sessions \
+  /var/www/html/storage/framework/testing
 docker compose exec -T app chown -R www-data:www-data /var/www/html/storage
 docker compose exec -T app chmod -R 775 /var/www/html/storage
 
