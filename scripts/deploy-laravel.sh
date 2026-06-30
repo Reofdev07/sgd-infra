@@ -22,13 +22,20 @@ until docker compose exec -T app php artisan migrate:status &>/dev/null; do
 done
 echo "Oracle listo."
 
-# Migraciones
+# Migraciones (solo las pendientes, seguro de repetir)
 echo "Ejecutando migraciones..."
 docker compose exec -T app php artisan migrate --force
 
-# Seeders (updateOrCreate — seguro de repetir)
-echo "Sembrando datos base..."
-docker compose exec -T app php artisan db:seed --force
+# Seeders — SOLO se ejecutan si se solicita explícitamente con SEED=true
+# Por seguridad, seeders no se corren automáticamente en producción.
+# Usar: SEED=true bash deploy-laravel.sh
+if [ "$SEED" = "true" ]; then
+    echo "Ejecutando seeders (solicitado vía SEED=true)..."
+    docker compose exec -T app php artisan db:seed --force
+    echo "Seeders completados."
+else
+    echo "Seeders omitidos. Para ejecutarlos: SEED=true bash deploy-laravel.sh"
+fi
 
 # Storage permissions (PHP-FPM corre como www-data)
 echo "Corrigiendo permisos de storage..."
@@ -93,3 +100,8 @@ docker compose exec -T app php artisan queue:restart || true
 echo ""
 echo "=== Laravel deploy completado ==="
 echo "Probar: curl -s http://localhost/api/health"
+echo ""
+echo "Recordatorio:"
+echo "  - Seeders NO se ejecutan automáticamente"
+echo "  - Si necesitas seeders: SEED=true bash $0"
+echo "  - Para solo código (sin migrate): docker compose restart app"
