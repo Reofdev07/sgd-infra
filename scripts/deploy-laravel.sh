@@ -55,7 +55,7 @@ else
 fi
 
 # Verificar si ya existe un cliente personal
-PERSONAL_CLIENT_EXISTS=$(docker compose exec -T app php -r 'echo \Illuminate\Support\Facades\DB::table("oauth_clients")->where("personal_access_client", 1)->count();')
+PERSONAL_CLIENT_EXISTS=$(docker compose exec -T app php -r 'echo \Illuminate\Support\Facades\DB::table("oauth_clients")->where("personal_access_client", 1)->count();' || echo 0)
 if [ "$PERSONAL_CLIENT_EXISTS" = "0" ]; then
     echo "Creando cliente personal de Passport..."
     docker compose exec -T app php artisan passport:client --personal --name="SGD Personal Access Client" --no-interaction
@@ -64,7 +64,7 @@ else
 fi
 
 # Verificar si ya existe un cliente password grant
-PASSWORD_CLIENT_EXISTS=$(docker compose exec -T app php -r 'echo \Illuminate\Support\Facades\DB::table("oauth_clients")->where("password_client", 1)->count();')
+PASSWORD_CLIENT_EXISTS=$(docker compose exec -T app php -r 'echo \Illuminate\Support\Facades\DB::table("oauth_clients")->where("password_client", 1)->count();' || echo 0)
 if [ "$PASSWORD_CLIENT_EXISTS" = "0" ]; then
     echo "Creando cliente password grant de Passport..."
     docker compose exec -T app php artisan passport:client --password --name="SGD Password Grant Client" --no-interaction
