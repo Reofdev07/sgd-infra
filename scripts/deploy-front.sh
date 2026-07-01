@@ -12,6 +12,16 @@ FRONT_DIR="${FRONTEND_PATH:-../SGD-Front}"
 
 echo "=== Deploy Frontend ==="
 
+# Validar variables críticas del .env
+if [ -z "${DOMAIN:-}" ]; then
+    echo "ERROR: DOMAIN no está definido en .env"
+    echo "Agrega: DOMAIN=demo.aviliontech.com"
+    exit 1
+fi
+
+echo "Limpiando caché de build..."
+rm -rf "$FRONT_DIR/.quasar/prod-spa"
+
 echo "Instalando dependencias..."
 cd "$FRONT_DIR"
 npm ci
@@ -29,7 +39,7 @@ echo "Build correcto: $(wc -c < dist/spa/index.html) bytes"
 
 # --- Generar config.json desde .env ---
 # Esto evita tener que editar config.json a mano para cada entorno
-DOMAIN="${DOMAIN:-localhost}"
+DOMAIN="${DOMAIN}"
 REVERB_PORT="80"
 REVERB_SCHEME="http"
 if [ "$DOMAIN" != "localhost" ]; then
