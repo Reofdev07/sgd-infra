@@ -16,7 +16,7 @@ echo "Usando compose file: $COMPOSE_FILE"
 
 # Esperar a que Oracle esté listo
 echo "Esperando a Oracle XE..."
-until docker compose exec -T app php artisan migrate:status &>/dev/null; do
+until docker compose exec -T app php -r 'exit(oci_connect(getenv("DB_USERNAME"), getenv("DB_PASSWORD"), getenv("DB_HOST").":".getenv("DB_PORT")."/".getenv("DB_DATABASE")) ? 0 : 1);' &>/dev/null; do
     echo "  Oracle no listo, reintentando en 5s..."
     sleep 5
 done
