@@ -118,7 +118,7 @@ services:
     volumes:
       - ${LARAVEL_PATH:-../SDG-Back-api}:/var/www/html
       - app_storage:/var/www/html/storage
-    command: php artisan queue:work --queue=default --sleep=3 --tries=3 --max-time=3600
+    command: php artisan queue:work --queue=default --sleep=3 --tries=3 --max-time=86400
     environment:
       - DB_CONNECTION=oracle
       - DB_HOST=oracle-xe
@@ -166,7 +166,7 @@ services:
     volumes:
       - ${LARAVEL_PATH:-../SDG-Back-api}:/var/www/html
       - app_storage:/var/www/html/storage
-    command: php artisan queue:work --queue=pqrsd-ai --sleep=3 --tries=3 --max-time=3600
+    command: php artisan queue:work --queue=pqrsd-ai --sleep=3 --tries=3 --max-time=86400
     environment:
       - DB_CONNECTION=oracle
       - DB_HOST=oracle-xe
