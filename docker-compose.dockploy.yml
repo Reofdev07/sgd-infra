@@ -336,7 +336,6 @@ services:
     restart: always
     ports:
       - 80
-    image: nginx:1.27-alpine
     volumes:
       - ./nginx/sgd.conf:/etc/nginx/conf.d/default.conf:ro
       - ${FRONTEND_DIST_PATH:-../SGD-Front/dist/pwa}:/usr/share/nginx/html:ro
