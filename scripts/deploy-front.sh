@@ -20,22 +20,22 @@ if [ -z "${DOMAIN:-}" ]; then
 fi
 
 echo "Limpiando caché de build..."
-rm -rf "$FRONT_DIR/.quasar/prod-spa"
+rm -rf "$FRONT_DIR/.quasar/prod-spa" "$FRONT_DIR/.quasar/prod-pwa"
 
 echo "Instalando dependencias..."
 cd "$FRONT_DIR"
 npm ci
 
-echo "Compilando SPA para producción..."
-NODE_ENV=production npm run build
+echo "Compilando PWA para producción..."
+NODE_ENV=production npm run build-pwa
 
 echo "Verificando build..."
-if [ ! -f dist/spa/index.html ]; then
-    echo "ERROR: dist/spa/index.html no existe. El build falló."
+if [ ! -f dist/pwa/index.html ]; then
+    echo "ERROR: dist/pwa/index.html no existe. El build falló."
     exit 1
 fi
 
-echo "Build correcto: $(wc -c < dist/spa/index.html) bytes"
+echo "Build correcto: $(wc -c < dist/pwa/index.html) bytes"
 
 # --- Generar config.json desde .env ---
 # Esto evita tener que editar config.json a mano para cada entorno
@@ -47,7 +47,7 @@ if [ "$DOMAIN" != "localhost" ]; then
     REVERB_SCHEME="https"
 fi
 
-cat > dist/spa/config.json <<JSON
+cat > dist/pwa/config.json <<JSON
 {
   "API_URL": "/api/",
   "REVERB_APP_KEY": "${REVERB_APP_KEY}",
@@ -65,7 +65,7 @@ echo "config.json generado para DOMAIN=$DOMAIN (${REVERB_SCHEME}://${DOMAIN}:${R
 cd - >/dev/null
 
 # --- Nginx: bind mount fix ---
-# npm run build borra y recrea dist/spa/ (cambia el inodo),
+# npm run build-pwa borra y recrea dist/pwa/ (cambia el inodo),
 # rompiendo el bind mount de Docker. Hay que recrear el contenedor.
 if [ -f docker-compose.dockploy.yml ]; then
   COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.dockploy.yml}"
