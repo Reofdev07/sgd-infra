@@ -29,9 +29,16 @@ echo "Usando compose file: $COMPOSE_FILE"
 echo ""
 echo "--- Oracle ---"
 
+# Password del usuario SYSTEM de Oracle desde entorno (no hardcodeada)
+SYSTEM_PASSWORD="${ORACLE_SYSTEM_PASSWORD:-}"
+if [ -z "$SYSTEM_PASSWORD" ]; then
+    echo "ERROR: Falta ORACLE_SYSTEM_PASSWORD en .env (password del usuario SYSTEM de Oracle)"
+    exit 1
+fi
+
 # Obtener ruta real de DATA_PUMP_DIR (tiene sufijo aleatorio por BD)
 DP_SQL="/tmp/get_dpdir_$$.sql"
-cat > "$DP_SQL" << 'SQLEOF'
+cat > "$DP_SQL" << SQLEOF
 SET HEADING OFF FEEDBACK OFF PAGESIZE 0
 SELECT directory_path FROM dba_directories WHERE directory_name = 'DATA_PUMP_DIR';
 EXIT
@@ -39,7 +46,7 @@ SQLEOF
 docker compose cp "$DP_SQL" oracle-xe:/tmp/get_dpdir.sql
 rm -f "$DP_SQL"
 
-DPDIR=$(docker compose exec -T oracle-xe sqlplus -S SYSTEM/StrongPassword123!@localhost/XEPDB1 @/tmp/get_dpdir.sql 2>/dev/null | grep -E '^/' | head -1 | xargs)
+DPDIR=$(docker compose exec -T oracle-xe sqlplus -S "SYSTEM/${SYSTEM_PASSWORD}@localhost/XEPDB1" @/tmp/get_dpdir.sql 2>/dev/null | grep -E '^/' | head -1 | xargs)
 docker compose exec -T --user root oracle-xe rm -f /tmp/get_dpdir.sql 2>/dev/null || true
 
 if [ -z "$DPDIR" ]; then
@@ -48,12 +55,25 @@ if [ -z "$DPDIR" ]; then
 fi
 echo "DATA_PUMP_DIR: $DPDIR"
 
+# Auto-reparación: refrescar el directorio dedicado SGD_DUMP con el path actual
+# y garantizar permisos de SGD_MR7 (sobrevive a recreaciones del contenedor / cambios de GUID)
+FIX_SQL="/tmp/fix_sgd_dump_$$.sql"
+cat > "$FIX_SQL" << FIXEOF
+CREATE OR REPLACE DIRECTORY SGD_DUMP AS '${DPDIR}';
+GRANT READ, WRITE ON DIRECTORY SGD_DUMP TO ${DB_USERNAME:-SGD_MR7};
+EXIT
+FIXEOF
+docker compose cp "$FIX_SQL" oracle-xe:/tmp/fix_sgd_dump.sql
+docker compose exec -T oracle-xe sqlplus -S "SYSTEM/${SYSTEM_PASSWORD}@localhost/XEPDB1" @/tmp/fix_sgd_dump.sql > /dev/null 2>&1 || echo "WARN: no se pudo refrescar SGD_DUMP"
+docker compose exec -T --user root oracle-xe rm -f /tmp/fix_sgd_dump.sql 2>/dev/null || true
+rm -f "$FIX_SQL"
+
 DUMPFILE="sgd_backup_${DATE}.dmp"
 LOGFILE="sgd_backup_${DATE}.log"
 
 echo "Exportando con expdp (esquema ${DB_USERNAME:-SGD_MR7})..."
 docker compose exec -T oracle-xe expdp "\"${DB_USERNAME:-SGD_MR7}/${DB_PASSWORD:-sgd123}@localhost/XEPDB1\"" \
-    directory=DATA_PUMP_DIR dumpfile="$DUMPFILE" logfile="$LOGFILE" \
+    directory=SGD_DUMP dumpfile="$DUMPFILE" logfile="$LOGFILE" \
     schemas="${DB_USERNAME:-SGD_MR7}" reuse_dumpfiles=y 2>&1 || {
     echo "ERROR: expdp falló."
     exit 1

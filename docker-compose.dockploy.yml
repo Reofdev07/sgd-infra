@@ -311,6 +311,7 @@ services:
       - KEY_ID=${B2_KEY_ID}
       - KEY_NAME=${B2_KEY_NAME:-sgd-mr7}
       - APPLICATION_KEY=${B2_APPLICATION_KEY}
+      - ALLOWED_DOWNLOAD_HOSTS=${ALLOWED_DOWNLOAD_HOSTS:-backblazeb2.com}
       - LANGSMITH_TRACING=${LANGSMITH_TRACING:-false}
       - LANGSMITH_PROJECT=${LANGSMITH_PROJECT:-Osai}
       - LANGSMITH_ENDPOINT=${LANGSMITH_ENDPOINT:-https://api.smith.langchain.com}
