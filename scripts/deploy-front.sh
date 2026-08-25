@@ -61,6 +61,23 @@ JSON
 
 echo "config.json generado para DOMAIN=$DOMAIN (${REVERB_SCHEME}://${DOMAIN}:${REVERB_PORT})"
 
+# --- Hornear el commit en version.json para poder verificar qué versión está desplegada ---
+GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+cat > dist/pwa/version.json <<JSON
+{
+  "commit": "${GIT_COMMIT}",
+  "built_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+}
+JSON
+
+# Verificación: el commit horneado coincide con el HEAD actual (evita builds desactualizados)
+if [ -f dist/pwa/version.json ] && grep -q "\"commit\": \"${GIT_COMMIT}\"" dist/pwa/version.json; then
+    echo "OK: build alineado con el commit ${GIT_COMMIT}"
+else
+    echo "ERROR: version.json no refleja el commit actual (${GIT_COMMIT}). Build inconsistente."
+    exit 1
+fi
+
 # Volver a sgd-infra
 cd - >/dev/null
 
