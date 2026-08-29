@@ -55,6 +55,8 @@ COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
 # Configuración PHP
 COPY php.ini /usr/local/etc/php/conf.d/custom.ini
+# Pool PHP-FPM parametrizado (reemplaza el default de 5 workers de la imagen)
+COPY www.conf /usr/local/etc/php-fpm.d/www.conf
 
 WORKDIR /var/www/html
 
