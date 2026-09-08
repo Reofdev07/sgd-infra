@@ -100,13 +100,14 @@ services:
       - FILESYSTEM_DISK=local
       - PASSPORT_PERSONAL_ACCESS_CLIENT_ID=${PASSPORT_CLIENT_ID:-2}
       - PASSPORT_PERSONAL_ACCESS_CLIENT_SECRET=${PASSPORT_CLIENT_SECRET}
-      - MAIL_MAILER=${MAIL_MAILER:-log}
-      - MAIL_HOST=${MAIL_HOST:-sandbox.smtp.mailtrap.io}
-      - MAIL_PORT=${MAIL_PORT:-2525}
+      - MAIL_MAILER=${MAIL_MAILER:-smtp}
+      - MAIL_HOST=${MAIL_HOST:-smtp.resend.com}
+      - MAIL_PORT=${MAIL_PORT:-587}
       - MAIL_USERNAME=${MAIL_USERNAME}
       - MAIL_PASSWORD=${MAIL_PASSWORD}
-      - MAIL_FROM_ADDRESS=${MAIL_FROM_ADDRESS:-noreply@${DOMAIN:-localhost}}
-      - MAIL_FROM_NAME=${APP_NAME:-SGD}
+      - MAIL_ENCRYPTION=${MAIL_ENCRYPTION:-tls}
+      - MAIL_FROM_ADDRESS=${MAIL_FROM_ADDRESS:-noreply@aviliontech.com}
+      - MAIL_FROM_NAME=${MAIL_FROM_NAME:-${APP_NAME:-SGD}}
     depends_on:
       oracle-xe:
         condition: service_healthy
@@ -161,6 +162,14 @@ services:
       - B2_ENDPOINT=${B2_ENDPOINT:-https://s3.us-east-005.backblazeb2.com}
       - B2_REGION=${B2_REGION:-us-east-005}
       - FILESYSTEM_CLOUD=b2
+      - MAIL_MAILER=${MAIL_MAILER:-smtp}
+      - MAIL_HOST=${MAIL_HOST:-smtp.resend.com}
+      - MAIL_PORT=${MAIL_PORT:-587}
+      - MAIL_USERNAME=${MAIL_USERNAME}
+      - MAIL_PASSWORD=${MAIL_PASSWORD}
+      - MAIL_ENCRYPTION=${MAIL_ENCRYPTION:-tls}
+      - MAIL_FROM_ADDRESS=${MAIL_FROM_ADDRESS:-noreply@aviliontech.com}
+      - MAIL_FROM_NAME=${MAIL_FROM_NAME:-${APP_NAME:-SGD}}
     depends_on:
       app:
         condition: service_started
@@ -213,6 +222,14 @@ services:
       - B2_ENDPOINT=${B2_ENDPOINT:-https://s3.us-east-005.backblazeb2.com}
       - B2_REGION=${B2_REGION:-us-east-005}
       - FILESYSTEM_CLOUD=b2
+      - MAIL_MAILER=${MAIL_MAILER:-smtp}
+      - MAIL_HOST=${MAIL_HOST:-smtp.resend.com}
+      - MAIL_PORT=${MAIL_PORT:-587}
+      - MAIL_USERNAME=${MAIL_USERNAME}
+      - MAIL_PASSWORD=${MAIL_PASSWORD}
+      - MAIL_ENCRYPTION=${MAIL_ENCRYPTION:-tls}
+      - MAIL_FROM_ADDRESS=${MAIL_FROM_ADDRESS:-noreply@aviliontech.com}
+      - MAIL_FROM_NAME=${MAIL_FROM_NAME:-${APP_NAME:-SGD}}
     depends_on:
       app:
         condition: service_started
