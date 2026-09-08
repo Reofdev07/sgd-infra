@@ -89,6 +89,16 @@ crontab -e
 # Añadir: 0 3 * * * cd /home/deploy/sgd-infra && bash scripts/backup.sh >> /home/deploy/backups/backup.log 2>&1
 ```
 
+## Documentación
+
+| Doc | Contenido |
+|---|---|
+| `docs/EMAIL-RESEND.md` | Runbook de envío de correo con Resend + cómo agregar un nuevo municipio |
+| `docs/ESCALABILIDAD-Y-RENDIMIENTO.md` | Parámetros de rendimiento y escalabilidad |
+| `docs/PRODUCTION.md` | Despliegue en producción |
+| `docs/DEPLOY_PLAN.md` | Plan de despliegue |
+| `docs/LOCAL.md` | Entorno local |
+
 ## Arquitectura
 
 ```
