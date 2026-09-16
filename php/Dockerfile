@@ -20,7 +20,7 @@ FROM php:8.2-fpm-bookworm
 # Dependencias del sistema (incluye Ghostscript para compresión PDF de Laravel)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git curl wget unzip zip \
-    libpng-dev libjpeg-dev libfreetype6-dev \
+    libpng-dev libjpeg-dev libfreetype6-dev libwebp-dev \
     libxml2-dev libzip-dev libcurl4-openssl-dev \
     libonig-dev libsqlite3-dev libpq-dev \
     libssl-dev libpcre2-dev \
@@ -37,7 +37,7 @@ RUN echo /opt/oracle/product/26ai/dbhomeFree/lib > /etc/ld.so.conf.d/oracle-inst
     ldconfig
 
 # Extensiones PHP
-RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
+RUN docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp \
     && docker-php-ext-install -j$(nproc) \
         pdo pdo_mysql pdo_pgsql pdo_sqlite \
         mbstring xml bcmath gd curl zip intl \
