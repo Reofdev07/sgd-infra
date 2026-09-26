@@ -130,7 +130,34 @@ else
 fi
 
 # ============================================
-# 4. Limpiar backups antiguos (>7 días)
+# 4. Copia offsite cifrada (restic → object storage S3-compatible)
+# ============================================
+echo ""
+echo "--- Offsite (restic) ---"
+
+if [ -z "${RESTIC_REPOSITORY:-}" ] || [ -z "${RESTIC_PASSWORD:-}" ]; then
+    echo "WARN: faltan RESTIC_REPOSITORY / RESTIC_PASSWORD en .env — no hay copia offsite."
+    OFFSITE_OK=0
+else
+    if restic backup "$BACKUP_DIR" \
+        --tag sgd --tag automated \
+        --exclude "*.log" \
+        --host sgd-vps 2>&1 | tail -5; then
+        echo "Offsite OK"
+        OFFSITE_OK=1
+
+        # Retención remota: 7 diarios, 4 semanales, 6 mensuales.
+        restic forget --tag sgd \
+            --keep-daily 7 --keep-weekly 4 --keep-monthly 6 \
+            --prune 2>&1 | tail -3
+    else
+        echo "ERROR: restic backup falló."
+        OFFSITE_OK=0
+    fi
+fi
+
+# ============================================
+# 5. Limpiar backups antiguos (>7 días)
 # ============================================
 echo ""
 echo "--- Limpieza ---"
@@ -150,3 +177,15 @@ echo ""
 echo "=== Backup SGD completado: $(date) ==="
 echo "Destino: $BACKUP_DIR"
 ls -lh "$BACKUP_DIR"/*${DATE}* 2>/dev/null || echo "(sin archivos nuevos)"
+
+# Alerta si el offsite falló
+if [ "${OFFSITE_OK:-0}" -ne 1 ]; then
+    TOKEN="${TELEGRAM_BOT_TOKEN:-8706852433:AAF6KVl9fzbehgmJrClbntquTwAdXen7r_U}"
+    CHAT="${TELEGRAM_CHAT_ID:-5096050646}"
+    if [ -n "$TOKEN" ] && [ -n "$CHAT" ]; then
+        curl -s -X POST "https://api.telegram.org/bot$TOKEN/sendMessage" \
+            -d "chat_id=$CHAT" \
+            -d "text=⚠️ *SGD BACKUP*: copia offsite NO completada. Revisar logs." \
+            -d "parse_mode=Markdown" > /dev/null 2>&1
+    fi
+fi
