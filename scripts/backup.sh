@@ -90,18 +90,27 @@ docker compose exec -T --user root oracle-xe rm -f "$DPDIR/$DUMPFILE" "$DPDIR/$L
 echo "Oracle backup: $(ls -lh "$BACKUP_DIR/$DUMPFILE" | awk '{print $5}')"
 
 # ============================================
-# 2. Storage de Laravel (uploads, logs, sesiones)
+# 2. Storage de Laravel (volumen real app_storage)
 # ============================================
 echo ""
 echo "--- Laravel storage ---"
-LARAVEL_DIR="${LARAVEL_PATH:-../SDG-Back-api}"
 LARAVEL_BACKUP="laravel_storage_${DATE}.tar.gz"
 
-if [ -d "$LARAVEL_DIR/storage" ]; then
-    tar czf "$BACKUP_DIR/$LARAVEL_BACKUP" -C "$LARAVEL_DIR" storage/ 2>/dev/null
+# El volumen app_storage se monta ENCIMA de /var/www/html/storage: hay que
+# leerlo desde dentro del contenedor, no desde el bind del host (que solo
+# tiene el esqueleto versionado). Se excluyen los logs: son rotables y
+# representan ~99% del tamaño, pero no hacen falta para restaurar.
+if docker compose ps app 2>/dev/null | grep -q 'Up'; then
+    docker compose exec -T app tar czf - \
+        --exclude='./logs/*' \
+        -C /var/www/html/storage . 2>/dev/null > "$BACKUP_DIR/$LARAVEL_BACKUP" || {
+        echo "ERROR: backup de storage falló."
+        exit 1
+    }
     echo "Laravel backup: $(ls -lh "$BACKUP_DIR/$LARAVEL_BACKUP" | awk '{print $5}')"
 else
-    echo "WARN: $LARAVEL_DIR/storage no existe, omitiendo."
+    echo "ERROR: el contenedor app no está corriendo, no se puede respaldar el storage."
+    exit 1
 fi
 
 # ============================================
