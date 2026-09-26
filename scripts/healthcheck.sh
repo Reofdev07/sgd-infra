@@ -72,6 +72,7 @@ if [ "$QUEUE_RC" -eq 0 ]; then
 else
     echo "  [FAIL] Colas (failed/backlog/mem)"
     FAIL=$((FAIL+1))
+    FAILED_CHECKS="${FAILED_CHECKS}- Colas (failed/backlog/mem)\n"
 fi
 
 # Tamaño de Oracle: alerta temprana antes de alcanzar el límite duro de 12 GB (SGD-110).
@@ -83,6 +84,7 @@ if [ "$DBSIZE_RC" -eq 0 ]; then
 else
     echo "  [FAIL] Tamaño Oracle"
     FAIL=$((FAIL+1))
+    FAILED_CHECKS="${FAILED_CHECKS}- Tamaño Oracle\n"
 fi
 
 echo ""
@@ -91,14 +93,17 @@ echo "Resultado: $PASS OK, $FAIL FAIL"
 
 # --- Telegram alert si hay chequeos fallidos ---
 if [ "$FAIL" -gt 0 ]; then
-    MSG="🚨 SGD ALERTA: $FAIL chequeos fallidos
-$(date)
-OK: $PASS | FAIL: $FAIL
+    MSG="🚨 SGD ALERTA
+$(date '+%Y-%m-%d %H:%M:%S')
+✅ OK: $PASS  |  ❌ FAIL: $FAIL
 
-Fallaron:
+━━ Fallos ━━
 $(echo -e "$FAILED_CHECKS")
-Colas: ${QUEUE_OUT}
-Oracle: ${DBSIZE_OUT}"
+━━ Colas ━━
+${QUEUE_OUT}
+
+━━ Oracle ━━
+${DBSIZE_OUT}"
     send_telegram "$MSG"
 fi
 
