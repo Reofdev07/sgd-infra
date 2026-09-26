@@ -26,8 +26,9 @@ check() {
     fi
 }
 
-# Token/chat hardcodeados como fallback (SGD-032: se rotan a variables de
-# entorno en QW7). Centralizado aquí para no repetir el bloque curl.
+# Token/chat hardcodeados como fallback (SGD-096: se rotan vía BotFather y se
+# mueven a variables de entorno en la fase de secretos). Centralizado aquí
+# para no repetir el bloque curl.
 send_telegram() {
     local text="$1"
     local token="${TELEGRAM_BOT_TOKEN:-8706852433:AAF6KVl9fzbehgmJrClbntquTwAdXen7r_U}"
