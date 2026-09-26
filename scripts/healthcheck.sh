@@ -33,10 +33,9 @@ send_telegram() {
     local text="$1"
     local token="${TELEGRAM_BOT_TOKEN:-8706852433:AAF6KVl9fzbehgmJrClbntquTwAdXen7r_U}"
     local chat="${TELEGRAM_CHAT_ID:-5096050646}"
-    curl -s -X POST "https://api.telegram.org/bot$token/sendMessage" \
-        -d "chat_id=$chat" \
-        -d "text=$text" \
-        -d "parse_mode=Markdown" > /dev/null 2>&1
+    curl -sf -X POST "https://api.telegram.org/bot$token/sendMessage" \
+        --data-urlencode "chat_id=$chat" \
+        --data-urlencode "text=$text"
 }
 
 # Contenedores activos
