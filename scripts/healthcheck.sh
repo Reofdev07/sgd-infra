@@ -13,6 +13,7 @@ export COMPOSE_FILE
 echo "=== Health Check SGD ==="
 PASS=0
 FAIL=0
+FAILED_CHECKS=""
 
 check() {
     local name="$1"
@@ -23,6 +24,7 @@ check() {
     else
         echo "  [FAIL] $name"
         FAIL=$((FAIL+1))
+        FAILED_CHECKS="${FAILED_CHECKS}- ${name}\n"
     fi
 }
 
@@ -89,15 +91,14 @@ echo "Resultado: $PASS OK, $FAIL FAIL"
 
 # --- Telegram alert si hay chequeos fallidos ---
 if [ "$FAIL" -gt 0 ]; then
-    MSG="🚨 *SGD ALERTA*: $FAIL chequeos fallidos
+    MSG="🚨 SGD ALERTA: $FAIL chequeos fallidos
 $(date)
-✅ OK: $PASS  |  ❌ FAIL: $FAIL
+OK: $PASS | FAIL: $FAIL
 
-Colas:
-${QUEUE_OUT}
-
-Oracle:
-${DBSIZE_OUT}"
+Fallaron:
+$(echo -e "$FAILED_CHECKS")
+Colas: ${QUEUE_OUT}
+Oracle: ${DBSIZE_OUT}"
     send_telegram "$MSG"
 fi
 
