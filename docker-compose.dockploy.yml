@@ -375,8 +375,6 @@ services:
     image: nginx:1.27-alpine
     restart: always
     mem_limit: ${MEM_LIMIT_NGINX:-256m}
-    ports:
-      - 80
     volumes:
       - ./nginx/sgd.conf:/etc/nginx/conf.d/default.conf:ro
       - ${FRONTEND_DIST_PATH:-../SGD-Front/dist/pwa}:/usr/share/nginx/html:ro

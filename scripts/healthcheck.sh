@@ -73,6 +73,17 @@ else
     FAIL=$((FAIL+1))
 fi
 
+# Tamaño de Oracle: alerta temprana antes de alcanzar el límite duro de 12 GB (SGD-110).
+DBSIZE_RC=0
+DBSIZE_OUT=$(docker compose exec -T app php artisan db:size --max-gb=8 2>&1) || DBSIZE_RC=$?
+if [ "$DBSIZE_RC" -eq 0 ]; then
+    echo "  [OK] Tamaño Oracle"
+    PASS=$((PASS+1))
+else
+    echo "  [FAIL] Tamaño Oracle"
+    FAIL=$((FAIL+1))
+fi
+
 echo ""
 echo "Resultado: $PASS OK, $FAIL FAIL"
 [ "$FAIL" -eq 0 ] && echo "Todos los servicios están saludables." || echo "Hay servicios con problemas."
@@ -84,7 +95,10 @@ $(date)
 ✅ OK: $PASS  |  ❌ FAIL: $FAIL
 
 Colas:
-${QUEUE_OUT}"
+${QUEUE_OUT}
+
+Oracle:
+${DBSIZE_OUT}"
     send_telegram "$MSG"
 fi
 
