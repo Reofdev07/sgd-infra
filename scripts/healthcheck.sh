@@ -26,6 +26,18 @@ check() {
     fi
 }
 
+# Token/chat hardcodeados como fallback (SGD-032: se rotan a variables de
+# entorno en QW7). Centralizado aquí para no repetir el bloque curl.
+send_telegram() {
+    local text="$1"
+    local token="${TELEGRAM_BOT_TOKEN:-8706852433:AAF6KVl9fzbehgmJrClbntquTwAdXen7r_U}"
+    local chat="${TELEGRAM_CHAT_ID:-5096050646}"
+    curl -s -X POST "https://api.telegram.org/bot$token/sendMessage" \
+        -d "chat_id=$chat" \
+        -d "text=$text" \
+        -d "parse_mode=Markdown" > /dev/null 2>&1
+}
+
 # Contenedores activos
 check "Oracle XE"        "docker compose ps oracle-xe | grep -q 'healthy'"
 check "Redis"            "docker compose ps redis | grep -q 'healthy'"
@@ -48,22 +60,31 @@ check "OSAI /info"       "docker compose exec -T osai curl -sf http://localhost:
 # Frontend via HTTPS (Traefik → nginx → SPA)
 check "Frontend SPA"     "curl -sfk https://demo.aviliontech.com/ | grep -q 'id=q-app'"
 
+# Salud de colas: failed_jobs (Oracle), backlog en Redis y uso de memoria.
+# queue:health devuelve exit≠0 si se superan los umbrales (SGD-061).
+QUEUE_RC=0
+QUEUE_OUT=$(docker compose exec -T app php artisan queue:health --max-failed=0 --max-pending=200 2>&1) || QUEUE_RC=$?
+if [ "$QUEUE_RC" -eq 0 ]; then
+    echo "  [OK] Colas (failed/backlog/mem)"
+    PASS=$((PASS+1))
+else
+    echo "  [FAIL] Colas (failed/backlog/mem)"
+    FAIL=$((FAIL+1))
+fi
+
 echo ""
 echo "Resultado: $PASS OK, $FAIL FAIL"
 [ "$FAIL" -eq 0 ] && echo "Todos los servicios están saludables." || echo "Hay servicios con problemas."
 
-# --- Telegram alert si hay servicios caídos ---
-TELEGRAM_BOT_TOKEN="${TELEGRAM_BOT_TOKEN:-8706852433:AAF6KVl9fzbehgmJrClbntquTwAdXen7r_U}"
-TELEGRAM_CHAT_ID="${TELEGRAM_CHAT_ID:-5096050646}"
-
+# --- Telegram alert si hay chequeos fallidos ---
 if [ "$FAIL" -gt 0 ]; then
-    MSG="🚨 *SGD ALERTA*: $FAIL servicios caídos
+    MSG="🚨 *SGD ALERTA*: $FAIL chequeos fallidos
 $(date)
-✅ OK: $PASS  |  ❌ FAIL: $FAIL"
-    curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
-        -d "chat_id=$TELEGRAM_CHAT_ID" \
-        -d "text=$MSG" \
-        -d "parse_mode=Markdown" > /dev/null 2>&1
+✅ OK: $PASS  |  ❌ FAIL: $FAIL
+
+Colas:
+${QUEUE_OUT}"
+    send_telegram "$MSG"
 fi
 
 exit $FAIL
