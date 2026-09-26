@@ -1,7 +1,7 @@
 #!/bin/bash
 # scripts/healthcheck.sh — Verifica que todos los servicios estén funcionando
 # Ejecutar desde sgd-infra/
-set -e
+set +e
 
 if [ -f docker-compose.dockploy.yml ]; then
   COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.dockploy.yml}"
