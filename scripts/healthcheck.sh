@@ -75,6 +75,24 @@ else
     FAILED_CHECKS="${FAILED_CHECKS}- Colas (failed/backlog/mem)\n"
 fi
 
+# SGD-061: failed_jobs recientes (última hora) y backlog por cola individual
+RECENT_FAILED=$(docker compose exec -T app php artisan tinker --execute="echo \App\Models\FailedJob::where('failed_at','>=',now()->subHour())->count();" 2>/dev/null | tr -d '[:space:]')
+if [ -n "$RECENT_FAILED" ] && [ "$RECENT_FAILED" -gt 10 ] 2>/dev/null; then
+    echo "  [WARN] $RECENT_FAILED failed_jobs en la última hora"
+    FAILED_CHECKS="${FAILED_CHECKS}- ${RECENT_FAILED} failed_jobs recientes (>10)\n"
+fi
+
+QUEUE_DEFAULT=$(docker compose exec -T app php artisan tinker --execute="echo \Illuminate\Support\Facades\Redis::llen('queues:default');" 2>/dev/null | tr -d '[:space:]')
+QUEUE_PQRSD=$(docker compose exec -T app php artisan tinker --execute="echo \Illuminate\Support\Facades\Redis::llen('queues:pqrsd-ai');" 2>/dev/null | tr -d '[:space:]')
+if [ -n "$QUEUE_DEFAULT" ] && [ "$QUEUE_DEFAULT" -gt 50 ] 2>/dev/null; then
+    echo "  [WARN] Cola default con $QUEUE_DEFAULT jobs pendientes"
+    FAILED_CHECKS="${FAILED_CHECKS}- Cola default: ${QUEUE_DEFAULT} pendientes (>50)\n"
+fi
+if [ -n "$QUEUE_PQRSD" ] && [ "$QUEUE_PQRSD" -gt 50 ] 2>/dev/null; then
+    echo "  [WARN] Cola pqrsd-ai con $QUEUE_PQRSD jobs pendientes"
+    FAILED_CHECKS="${FAILED_CHECKS}- Cola pqrsd-ai: ${QUEUE_PQRSD} pendientes (>50)\n"
+fi
+
 # Tamaño de Oracle: alerta temprana antes de alcanzar el límite duro de 12 GB (SGD-110).
 DBSIZE_RC=0
 DBSIZE_OUT=$(docker compose exec -T app php artisan db:size --max-gb=8 2>&1) || DBSIZE_RC=$?
