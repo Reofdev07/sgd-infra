@@ -78,29 +78,29 @@ services:
       - PHP_FPM_MAX_SPARE_SERVERS=${PHP_FPM_MAX_SPARE_SERVERS:-8}
       - APP_NAME=${APP_NAME:-SGD}
       - APP_ENV=production
-      - APP_KEY=${APP_KEY}
+      - APP_KEY=${APP_KEY:?APP_KEY es obligatorio}
       - APP_DEBUG=false
       - APP_URL=https://${DOMAIN:-localhost}
       - FRONTEND_URL=https://${DOMAIN:-localhost}
       - FASTAPI_URL=http://osai:8000/api
-      - FASTAPI_TOKEN=${OSAI_API_TOKEN}
-      - REVERB_APP_KEY=${REVERB_APP_KEY}
-      - REVERB_APP_SECRET=${REVERB_APP_SECRET}
-      - REVERB_APP_ID=${REVERB_APP_ID}
+      - FASTAPI_TOKEN=${OSAI_API_TOKEN:?OSAI_API_TOKEN es obligatorio}
+      - REVERB_APP_KEY=${REVERB_APP_KEY:?REVERB_APP_KEY es obligatorio}
+      - REVERB_APP_SECRET=${REVERB_APP_SECRET:?REVERB_APP_SECRET es obligatorio}
+      - REVERB_APP_ID=${REVERB_APP_ID:?REVERB_APP_ID es obligatorio}
       - REVERB_HOST=${DOMAIN:-localhost}
       - REVERB_PORT=443
       - REVERB_SCHEME=https
       - REVERB_SERVER_HOST=reverb
       - REVERB_SERVER_PORT=8080
-      - B2_KEY_ID=${B2_KEY_ID}
-      - B2_APPLICATION_KEY=${B2_APPLICATION_KEY}
+      - B2_KEY_ID=${B2_KEY_ID:?B2_KEY_ID es obligatorio}
+      - B2_APPLICATION_KEY=${B2_APPLICATION_KEY:?B2_APPLICATION_KEY es obligatorio}
       - B2_BUCKET=${B2_BUCKET:-sgd-mr7}
       - B2_ENDPOINT=${B2_ENDPOINT:-https://s3.us-east-005.backblazeb2.com}
       - B2_REGION=${B2_REGION:-us-east-005}
       - FILESYSTEM_CLOUD=b2
       - FILESYSTEM_DISK=local
       - PASSPORT_PERSONAL_ACCESS_CLIENT_ID=${PASSPORT_CLIENT_ID:-2}
-      - PASSPORT_PERSONAL_ACCESS_CLIENT_SECRET=${PASSPORT_CLIENT_SECRET}
+      - PASSPORT_PERSONAL_ACCESS_CLIENT_SECRET=${PASSPORT_CLIENT_SECRET:?PASSPORT_CLIENT_SECRET es obligatorio}
       - MAIL_MAILER=${MAIL_MAILER:-smtp}
       - MAIL_HOST=${MAIL_HOST:-smtp.resend.com}
       - MAIL_PORT=${MAIL_PORT:-587}
@@ -149,17 +149,17 @@ services:
       - QUEUE_CONNECTION=redis
       - QUEUE_RETRY_AFTER=${QUEUE_RETRY_AFTER:-600}
       - BROADCAST_DRIVER=reverb
-      - APP_KEY=${APP_KEY}
+      - APP_KEY=${APP_KEY:?APP_KEY es obligatorio}
       - APP_URL=https://${DOMAIN:-localhost}
-      - REVERB_APP_KEY=${REVERB_APP_KEY}
-      - REVERB_APP_SECRET=${REVERB_APP_SECRET}
-      - REVERB_APP_ID=${REVERB_APP_ID}
+      - REVERB_APP_KEY=${REVERB_APP_KEY:?REVERB_APP_KEY es obligatorio}
+      - REVERB_APP_SECRET=${REVERB_APP_SECRET:?REVERB_APP_SECRET es obligatorio}
+      - REVERB_APP_ID=${REVERB_APP_ID:?REVERB_APP_ID es obligatorio}
       - REVERB_SERVER_HOST=reverb
       - REVERB_SERVER_PORT=8080
       - FASTAPI_URL=http://osai:8000/api
-      - FASTAPI_TOKEN=${OSAI_API_TOKEN}
-      - B2_KEY_ID=${B2_KEY_ID}
-      - B2_APPLICATION_KEY=${B2_APPLICATION_KEY}
+      - FASTAPI_TOKEN=${OSAI_API_TOKEN:?OSAI_API_TOKEN es obligatorio}
+      - B2_KEY_ID=${B2_KEY_ID:?B2_KEY_ID es obligatorio}
+      - B2_APPLICATION_KEY=${B2_APPLICATION_KEY:?B2_APPLICATION_KEY es obligatorio}
       - B2_BUCKET=${B2_BUCKET:-sgd-mr7}
       - B2_ENDPOINT=${B2_ENDPOINT:-https://s3.us-east-005.backblazeb2.com}
       - B2_REGION=${B2_REGION:-us-east-005}
@@ -210,17 +210,17 @@ services:
       - QUEUE_CONNECTION=redis
       - QUEUE_RETRY_AFTER=${QUEUE_RETRY_AFTER:-600}
       - BROADCAST_DRIVER=reverb
-      - APP_KEY=${APP_KEY}
+      - APP_KEY=${APP_KEY:?APP_KEY es obligatorio}
       - APP_URL=https://${DOMAIN:-localhost}
-      - REVERB_APP_KEY=${REVERB_APP_KEY}
-      - REVERB_APP_SECRET=${REVERB_APP_SECRET}
-      - REVERB_APP_ID=${REVERB_APP_ID}
+      - REVERB_APP_KEY=${REVERB_APP_KEY:?REVERB_APP_KEY es obligatorio}
+      - REVERB_APP_SECRET=${REVERB_APP_SECRET:?REVERB_APP_SECRET es obligatorio}
+      - REVERB_APP_ID=${REVERB_APP_ID:?REVERB_APP_ID es obligatorio}
       - REVERB_SERVER_HOST=reverb
       - REVERB_SERVER_PORT=8080
       - FASTAPI_URL=http://osai:8000/api
-      - FASTAPI_TOKEN=${OSAI_API_TOKEN}
-      - B2_KEY_ID=${B2_KEY_ID}
-      - B2_APPLICATION_KEY=${B2_APPLICATION_KEY}
+      - FASTAPI_TOKEN=${OSAI_API_TOKEN:?OSAI_API_TOKEN es obligatorio}
+      - B2_KEY_ID=${B2_KEY_ID:?B2_KEY_ID es obligatorio}
+      - B2_APPLICATION_KEY=${B2_APPLICATION_KEY:?B2_APPLICATION_KEY es obligatorio}
       - B2_BUCKET=${B2_BUCKET:-sgd-mr7}
       - B2_ENDPOINT=${B2_ENDPOINT:-https://s3.us-east-005.backblazeb2.com}
       - B2_REGION=${B2_REGION:-us-east-005}
@@ -266,7 +266,7 @@ services:
       - REDIS_PASSWORD=${REDIS_PASSWORD:-}
       - REDIS_PORT=6379
       - CACHE_DRIVER=redis
-      - APP_KEY=${APP_KEY}
+      - APP_KEY=${APP_KEY:?APP_KEY es obligatorio}
       - APP_URL=https://${DOMAIN:-localhost}
     depends_on:
       app:
@@ -300,9 +300,9 @@ services:
       - REDIS_HOST=redis
       - REDIS_PASSWORD=${REDIS_PASSWORD:-}
       - REDIS_PORT=6379
-      - REVERB_APP_KEY=${REVERB_APP_KEY}
-      - REVERB_APP_SECRET=${REVERB_APP_SECRET}
-      - REVERB_APP_ID=${REVERB_APP_ID}
+      - REVERB_APP_KEY=${REVERB_APP_KEY:?REVERB_APP_KEY es obligatorio}
+      - REVERB_APP_SECRET=${REVERB_APP_SECRET:?REVERB_APP_SECRET es obligatorio}
+      - REVERB_APP_ID=${REVERB_APP_ID:?REVERB_APP_ID es obligatorio}
       - REVERB_SERVER_HOST=0.0.0.0
       - REVERB_SERVER_PORT=8080
     depends_on:
@@ -329,7 +329,7 @@ services:
       - ENVIRONMENT=production
       - PYTHONPATH=.
       - BACKGROUND_WORKER=${OSAI_BACKGROUND_WORKER:-true}
-      - API_KEY_TOKEN=${OSAI_API_TOKEN}
+      - API_KEY_TOKEN=${OSAI_API_TOKEN:?OSAI_API_TOKEN es obligatorio}
       - WEBHOOK_URL=http://nginx/api/webhooks/fastapi/status-update
       - PORTAL_WEBHOOK_URL=http://nginx/api/webhooks/osai/pqrsd-analysis
       - BACKEND_URL=http://nginx
@@ -349,15 +349,15 @@ services:
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
       - GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/gcp-credentials.json
       - BUCKET_NAME=${B2_BUCKET:-sgd-mr7}
-      - KEY_ID=${B2_KEY_ID}
+      - KEY_ID=${B2_KEY_ID:?B2_KEY_ID es obligatorio}
       - KEY_NAME=${B2_KEY_NAME:-sgd-mr7}
-      - APPLICATION_KEY=${B2_APPLICATION_KEY}
+      - APPLICATION_KEY=${B2_APPLICATION_KEY:?B2_APPLICATION_KEY es obligatorio}
       - ALLOWED_DOWNLOAD_HOSTS=${ALLOWED_DOWNLOAD_HOSTS:-backblazeb2.com}
       - LANGSMITH_TRACING=${LANGSMITH_TRACING:-false}
       - LANGSMITH_PROJECT=${LANGSMITH_PROJECT:-Osai}
       - LANGSMITH_ENDPOINT=${LANGSMITH_ENDPOINT:-https://api.smith.langchain.com}
       - LANGSMITH_API_KEY=${LANGSMITH_API_KEY}
-      - WEBHOOK_SECRET=${WEBHOOK_SECRET}
+      - WEBHOOK_SECRET=${WEBHOOK_SECRET:?WEBHOOK_SECRET es obligatorio}
     volumes:
       - osai_data:/app/data
       - ${OSAI_CREDENTIALS_PATH:-../osai/credentials}:/app/credentials:ro

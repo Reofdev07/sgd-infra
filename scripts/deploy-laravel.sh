@@ -97,6 +97,13 @@ docker compose restart app
 echo "Reiniciando queue workers..."
 docker compose exec -T app php artisan queue:restart || true
 
+# Reiniciar reverb y scheduler para que tomen el código actualizado
+echo "Reiniciando reverb (WebSocket)..."
+docker compose restart reverb || true
+
+echo "Reiniciando scheduler..."
+docker compose restart scheduler || true
+
 echo ""
 echo "=== Laravel deploy completado ==="
 echo "Probar: curl -s http://localhost/api/health"
