@@ -36,7 +36,8 @@ CONNECT="SYSTEM/${ORACLE_SYSTEM_PASSWORD}@localhost/XEPDB1"
 run_sql() {
     local tmp; tmp=$(mktemp)
     { echo "SET HEADING OFF FEEDBACK OFF PAGESIZE 0 LINESIZE 300 SERVEROUTPUT ON"; echo "WHENEVER SQLERROR EXIT FAILURE"; cat; echo "EXIT"; } > "$tmp"
-    docker compose cp "$tmp" oracle-xe:/tmp/rehearsal.sql >/dev/null
+    chmod 644 "$tmp"  # mktemp crea 600 y el usuario oracle del contenedor no podría leerlo
+    docker compose cp "$tmp" oracle-xe:/tmp/rehearsal.sql >/dev/null 2>&1
     rm -f "$tmp"
     docker compose exec -T oracle-xe sqlplus -S "$CONNECT" @/tmp/rehearsal.sql
 }
@@ -58,8 +59,8 @@ echo "Dump: $DUMP_FILE ($(du -h "$DUMP_PATH" | cut -f1)) → esquema temporal $T
 DPDIR=$(run_sql <<'SQL' | grep -E '^/' | head -1 | xargs
 SELECT directory_path FROM dba_directories WHERE directory_name = 'SGD_DUMP';
 SQL
-)
-[ -n "$DPDIR" ] || { echo "ERROR: no existe el directorio SGD_DUMP (correr backup.sh una vez)"; exit 1; }
+) || true
+[ -n "$DPDIR" ] || { echo "ERROR: no se pudo leer el directorio SGD_DUMP (¿existe? correr backup.sh una vez)"; exit 1; }
 
 cleanup() {
     echo "--- Limpieza ---"
