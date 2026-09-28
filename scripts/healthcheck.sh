@@ -35,10 +35,22 @@ check() {
 # Token/chat hardcodeados como fallback (SGD-096: se rotan vía BotFather y se
 # mueven a variables de entorno en la fase de secretos). Centralizado aquí
 # para no repetir el bloque curl.
+# SGD-096: token y chat solo desde el entorno o el .env (antes estaban escritos aquí como valor por defecto).
+# Se cargan solo estas dos variables, no el .env completo.
+if [ -f .env ]; then
+    while IFS='=' read -r key value; do
+        [ -z "${!key:-}" ] && export "$key=$value"
+    done < <(grep -E '^TELEGRAM_(BOT_TOKEN|CHAT_ID)=' .env)
+fi
+
 send_telegram() {
     local text="$1"
-    local token="${TELEGRAM_BOT_TOKEN:-8706852433:AAF6KVl9fzbehgmJrClbntquTwAdXen7r_U}"
-    local chat="${TELEGRAM_CHAT_ID:-5096050646}"
+    local token="${TELEGRAM_BOT_TOKEN:-}"
+    local chat="${TELEGRAM_CHAT_ID:-}"
+    if [ -z "$token" ] || [ -z "$chat" ]; then
+        echo "AVISO: faltan TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID en .env; alerta no enviada."
+        return 0
+    fi
     curl -sf -X POST "https://api.telegram.org/bot$token/sendMessage" \
         --data-urlencode "chat_id=$chat" \
         --data-urlencode "text=$text"

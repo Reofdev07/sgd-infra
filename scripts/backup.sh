@@ -192,9 +192,12 @@ ls -lh "$BACKUP_DIR"/*${DATE}* 2>/dev/null || echo "(sin archivos nuevos)"
 
 # Alerta si el offsite falló
 if [ "${OFFSITE_OK:-0}" -ne 1 ]; then
-    TOKEN="${TELEGRAM_BOT_TOKEN:-8706852433:AAF6KVl9fzbehgmJrClbntquTwAdXen7r_U}"
-    CHAT="${TELEGRAM_CHAT_ID:-5096050646}"
-    if [ -n "$TOKEN" ] && [ -n "$CHAT" ]; then
+    # SGD-096: solo desde .env (backup.sh ya lo carga completo al inicio).
+    TOKEN="${TELEGRAM_BOT_TOKEN:-}"
+    CHAT="${TELEGRAM_CHAT_ID:-}"
+    if [ -z "$TOKEN" ] || [ -z "$CHAT" ]; then
+        echo "AVISO: faltan TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID en .env; alerta de offsite no enviada."
+    else
         curl -s -X POST "https://api.telegram.org/bot$TOKEN/sendMessage" \
             -d "chat_id=$CHAT" \
             -d "text=⚠️ *SGD BACKUP*: copia offsite NO completada. Revisar logs." \
