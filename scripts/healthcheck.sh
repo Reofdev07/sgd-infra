@@ -46,6 +46,7 @@ check "Redis"            "docker compose ps redis | grep -q 'healthy'"
 check "Laravel App"      "docker compose ps app | grep -q 'Up'"
 check "Worker Default"   "docker compose ps worker-default | grep -q 'Up'"
 check "Worker PQRSD"     "docker compose ps worker-pqrsd | grep -q 'Up'"
+check "Worker Filing"    "docker compose ps worker-filing | grep -q 'Up'"
 check "Scheduler"        "docker compose ps scheduler | grep -q 'Up'"
 check "Reverb"           "docker compose ps reverb | grep -q 'Up'"
 check "OSAI"             "docker compose ps osai | grep -q 'Up'"
@@ -84,6 +85,7 @@ fi
 
 QUEUE_DEFAULT=$(docker compose exec -T app php artisan tinker --execute="echo \Illuminate\Support\Facades\Redis::llen('queues:default');" 2>/dev/null | tr -d '[:space:]')
 QUEUE_PQRSD=$(docker compose exec -T app php artisan tinker --execute="echo \Illuminate\Support\Facades\Redis::llen('queues:pqrsd-ai');" 2>/dev/null | tr -d '[:space:]')
+QUEUE_FILING=$(docker compose exec -T app php artisan tinker --execute="echo \Illuminate\Support\Facades\Redis::llen('queues:filing-ai');" 2>/dev/null | tr -d '[:space:]')
 if [ -n "$QUEUE_DEFAULT" ] && [ "$QUEUE_DEFAULT" -gt 50 ] 2>/dev/null; then
     echo "  [WARN] Cola default con $QUEUE_DEFAULT jobs pendientes"
     FAILED_CHECKS="${FAILED_CHECKS}- Cola default: ${QUEUE_DEFAULT} pendientes (>50)\n"
@@ -91,6 +93,10 @@ fi
 if [ -n "$QUEUE_PQRSD" ] && [ "$QUEUE_PQRSD" -gt 50 ] 2>/dev/null; then
     echo "  [WARN] Cola pqrsd-ai con $QUEUE_PQRSD jobs pendientes"
     FAILED_CHECKS="${FAILED_CHECKS}- Cola pqrsd-ai: ${QUEUE_PQRSD} pendientes (>50)\n"
+fi
+if [ -n "$QUEUE_FILING" ] && [ "$QUEUE_FILING" -gt 50 ] 2>/dev/null; then
+    echo "  [WARN] Cola filing-ai con $QUEUE_FILING jobs pendientes"
+    FAILED_CHECKS="${FAILED_CHECKS}- Cola filing-ai: ${QUEUE_FILING} pendientes (>50)\n"
 fi
 
 # Tamaño de Oracle: alerta temprana antes de alcanzar el límite duro de 12 GB (SGD-110).

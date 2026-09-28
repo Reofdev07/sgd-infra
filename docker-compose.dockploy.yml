@@ -240,6 +240,21 @@ services:
       - sgd-network
 
   # ============================================
+  # Worker IA de la ventanilla interna (cola filing-ai)
+  # Separado de worker-pqrsd para que un lote interno grande no retrase
+  # las PQRSD del portal público, que tienen plazos legales.
+  # ============================================
+  worker-filing:
+    extends:
+      service: worker-pqrsd
+    command: php artisan queue:work --queue=filing-ai --sleep=1 --timeout=200 --tries=5 --max-time=86400
+    deploy:
+      replicas: ${WORKER_FILING_REPLICAS:-1}
+    depends_on:
+      app:
+        condition: service_started
+
+  # ============================================
   # Laravel Scheduler (cron interno)
   # ============================================
   scheduler:
