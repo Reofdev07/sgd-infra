@@ -47,14 +47,14 @@ ARTISAN_USER="-u www-data -e XDG_CONFIG_HOME=/tmp -e XDG_DATA_HOME=/tmp -e XDG_R
 
 check "Oracle XE"        "docker compose ps oracle-xe | grep -q 'healthy'"
 check "Redis"            "docker compose ps redis | grep -q 'healthy'"
-check "Laravel App"      "docker compose ps app | grep -q 'Up'"
+check "Laravel App"      "docker compose ps app | grep -q '(healthy)'"
 check "Worker Default"   "docker compose ps worker-default | grep -q 'Up'"
 check "Worker PQRSD"     "docker compose ps worker-pqrsd | grep -q 'Up'"
 check "Worker Filing"    "docker compose ps worker-filing | grep -q 'Up'"
 check "Scheduler"        "docker compose ps scheduler | grep -q 'Up'"
-check "Reverb"           "docker compose ps reverb | grep -q 'Up'"
+check "Reverb"           "docker compose ps reverb | grep -q '(healthy)'"
 check "OSAI"             "docker compose ps osai | grep -q 'Up'"
-check "Nginx"            "docker compose ps nginx | grep -q 'Up'"
+check "Nginx"            "docker compose ps nginx | grep -q '(healthy)'"
 
 echo ""
 
