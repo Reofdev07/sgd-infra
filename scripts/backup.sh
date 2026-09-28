@@ -3,6 +3,10 @@
 # Ejecutar desde sgd-infra/ vía cron
 set -e
 
+# Trabajar siempre desde sgd-infra/ (lanzado desde otra carpeta no encontraba el compose ni el .env
+# y reportaba todo caído).
+cd "$(dirname "$0")/.." || exit 1
+
 # Cargar .env si existe
 if [ -f .env ]; then
     set -a; source .env; set +a

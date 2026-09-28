@@ -3,6 +3,10 @@
 # Ejecutar desde sgd-infra/
 set +e
 
+# Trabajar siempre desde sgd-infra/ (lanzado desde otra carpeta no encontraba el compose ni el .env
+# y reportaba todo caído).
+cd "$(dirname "$0")/.." || exit 1
+
 if [ -f docker-compose.dockploy.yml ]; then
   COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.dockploy.yml}"
 else
