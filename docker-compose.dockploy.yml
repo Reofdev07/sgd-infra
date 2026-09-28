@@ -128,6 +128,8 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     working_dir: /var/www/html
+    # Mismo usuario que PHP-FPM: si escribe storage/logs como root, FPM no puede escribirlos (500).
+    user: "www-data"
     volumes:
       - ${LARAVEL_PATH:-../SDG-Back-api}:/var/www/html
       - app_storage:/var/www/html/storage
@@ -189,6 +191,8 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     working_dir: /var/www/html
+    # Mismo usuario que PHP-FPM: si escribe storage/logs como root, FPM no puede escribirlos (500).
+    user: "www-data"
     volumes:
       - ${LARAVEL_PATH:-../SDG-Back-api}:/var/www/html
       - app_storage:/var/www/html/storage
@@ -266,6 +270,8 @@ services:
     restart: unless-stopped
     mem_limit: ${MEM_LIMIT_WORKER:-1g}
     working_dir: /var/www/html
+    # Mismo usuario que PHP-FPM: si escribe storage/logs como root, FPM no puede escribirlos (500).
+    user: "www-data"
     volumes:
       - ${LARAVEL_PATH:-../SDG-Back-api}:/var/www/html
       - app_storage:/var/www/html/storage
@@ -301,6 +307,8 @@ services:
     restart: unless-stopped
     mem_limit: ${MEM_LIMIT_REVERB:-512m}
     working_dir: /var/www/html
+    # Mismo usuario que PHP-FPM: si escribe storage/logs como root, FPM no puede escribirlos (500).
+    user: "www-data"
     volumes:
       - ${LARAVEL_PATH:-../SDG-Back-api}:/var/www/html
       - app_storage:/var/www/html/storage
