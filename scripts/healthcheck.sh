@@ -81,7 +81,7 @@ else
 fi
 
 # SGD-061: failed_jobs recientes (última hora) y backlog por cola individual
-RECENT_FAILED=$(docker compose exec -T $ARTISAN_USER app php artisan tinker --execute="echo \App\Models\FailedJob::where('failed_at','>=',now()->subHour())->count();" 2>/dev/null | tr -d '[:space:]')
+RECENT_FAILED=$(docker compose exec -T $ARTISAN_USER app php artisan tinker --execute="echo \Illuminate\Support\Facades\DB::table('failed_jobs')->where('failed_at','>=',now()->subHour())->count();" 2>/dev/null | tr -d '[:space:]')
 if [ -n "$RECENT_FAILED" ] && [ "$RECENT_FAILED" -gt 10 ] 2>/dev/null; then
     echo "  [WARN] $RECENT_FAILED failed_jobs en la última hora"
     FAILED_CHECKS="${FAILED_CHECKS}- ${RECENT_FAILED} failed_jobs recientes (>10)\n"
