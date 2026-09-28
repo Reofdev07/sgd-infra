@@ -86,6 +86,10 @@ docker compose exec -T app php artisan config:clear
 docker compose exec -T app php artisan config:cache
 docker compose exec -T app php artisan route:cache
 docker compose exec -T app php artisan view:cache
+
+# Los caches y vistas compiladas se generaron como root: devolverlos a www-data (PHP-FPM).
+# Si un archivo de storage queda de root (p. ej. el log diario), cada excepción registrada da 500.
+docker compose exec -T app chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache
 docker compose exec -T app php artisan event:cache
 
 # Reiniciar app para que FPM tome los nuevos caches y opcache limpio
