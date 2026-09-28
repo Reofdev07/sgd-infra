@@ -20,6 +20,14 @@ BACKUP_DIR="${BACKUP_DIR:-/home/deploy/backups}"
 DATE=$(date +%Y%m%d_%H%M%S)
 mkdir -p "$BACKUP_DIR"
 
+# Una sola ejecución a la vez: dos corridas simultáneas generan los mismos nombres de archivo
+# y el tar del storage falla (pasó el 27 y 28/09/2026 con una entrada duplicada en el cron de root).
+exec 9>"$BACKUP_DIR/.backup.lock"
+if ! flock -n 9; then
+    echo "=== Backup SGD omitido $(date): ya hay otro backup en curso ==="
+    exit 0
+fi
+
 echo "=== Backup SGD $(date) ==="
 echo "Usando compose file: $COMPOSE_FILE"
 
