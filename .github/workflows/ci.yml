@@ -1,0 +1,28 @@
+# SGD-133: CI de infraestructura. Compose válido, sintaxis de scripts y shellcheck (solo errores).
+name: CI
+
+on:
+  push:
+    branches: [roraima.0.0.2]
+  pull_request:
+    branches: [roraima.0.0.2]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: docker compose config (con valores de prueba para las variables obligatorias)
+        run: |
+          cp .env.example .env
+          for v in APP_KEY B2_APPLICATION_KEY B2_KEY_ID OSAI_API_TOKEN PASSPORT_CLIENT_SECRET REVERB_APP_ID REVERB_APP_KEY REVERB_APP_SECRET WEBHOOK_SECRET; do
+            grep -q "^$v=." .env || sed -i "s/^$v=.*/$v=ci-dummy/" .env
+          done
+          docker compose -f docker-compose.dockploy.yml config -q
+
+      - name: Sintaxis de scripts
+        run: for f in scripts/*.sh; do bash -n "$f"; done
+
+      - name: shellcheck (solo errores)
+        run: shellcheck -S error scripts/*.sh
