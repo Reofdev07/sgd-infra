@@ -1,3 +1,5 @@
-.env
+# SGD-035: ningún .env (ni respaldos .env.bak.*) se versiona; solo la plantilla
+.env*
+!.env.example
 nginx/sgd-ssl.conf
 *.bak

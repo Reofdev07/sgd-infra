@@ -90,7 +90,8 @@ else
   COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.yml}"
 fi
 echo "Recreando nginx para refrescar bind mount (usando $COMPOSE_FILE)..."
-docker compose -f "$COMPOSE_FILE" up -d --force-recreate nginx
+# --no-deps: recrear solo nginx; sin él, compose reconcilia dependencias con config cambiada (p. ej. reiniciar Oracle).
+docker compose -f "$COMPOSE_FILE" up -d --no-deps --force-recreate nginx
 
 echo ""
 echo "=== Frontend deploy completado ==="
