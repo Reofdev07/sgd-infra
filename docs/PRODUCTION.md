@@ -168,36 +168,30 @@ openssl rand -hex 16
 #### Passport (OAuth2)
 
 ```
-PASSPORT_CLIENT_ID=3
+PASSPORT_CLIENT_ID=2
 PASSPORT_CLIENT_SECRET=...
 ```
 
-- `PASSPORT_CLIENT_ID`: ID del cliente personal de Passport. Se obtiene después del primer deploy:
+El login (`POST /api/auth/login`) pide el token a `/oauth/token` con **grant `password`**, usando el
+cliente de tipo **password** (`oauth_clients.password_client = 1`). Compose pasa estas variables al
+contenedor como `PASSPORT_PERSONAL_ACCESS_CLIENT_ID/SECRET` (el nombre es histórico: **no** es el
+cliente personal). Si el ID o el secreto no coinciden con la tabla, el login responde error.
+
+- `deploy-laravel.sh` crea los dos clientes si no existen (personal y password). En una base nueva
+  quedan como id 1 (personal) y **id 2 (password)**.
+- El secreto se guarda en **texto plano** (no se usa `Passport::hashClientSecrets()`): 40 caracteres.
+- **Nunca imprimir el secreto** en terminal, logs ni commits. Pasarlo directo de la base al `.env`:
 
 ```bash
-# Después de ejecutar deploy-laravel.sh:
-docker compose exec app php artisan passport:client --personal --no-interaction
-# Luego ver el ID:
-docker compose exec app php -r "echo App\Models\PassportClient::where('personal_access_client', 1)->first()->id ?? 'none';"
-```
-
-Generalmente es `2` o `3`.
-
-- `PASSPORT_CLIENT_SECRET`: El `secret` de ese cliente en la tabla `oauth_clients`. Debe ser **texto plano** (no hash bcrypt), porque `Passport::$hashesClientSecrets = false` en la configuración actual.
-
-Para obtenerlo:
-
-```bash
-docker compose exec app php -r "
-\$client = App\Models\PassportClient::where('personal_access_client', 1)->first();
-if (\$client) echo \$client->secret;
-"
-```
-
-Si el secret está hasheado (empieza con `$2y$`), hay que regenerarlo en texto plano:
-
-```sql
-UPDATE oauth_clients SET secret = 'un_secreto_plano_seguro' WHERE personal_access_client = 1;
+cd /home/deploy/sgd-infra && export COMPOSE_FILE=docker-compose.dockploy.yml
+A="docker compose exec -T -u www-data -e XDG_CONFIG_HOME=/tmp -e XDG_DATA_HOME=/tmp -e XDG_RUNTIME_DIR=/tmp app"
+cp -p .env .env.respaldo-$(date +%Y%m%d) && chmod 600 .env.respaldo-*
+S=$($A php artisan tinker --execute='echo PHP_EOL."SECRET=".DB::table("oauth_clients")->where("password_client",1)->value("secret").PHP_EOL;' 2>/dev/null | grep -oE '^SECRET=[A-Za-z0-9]+' | cut -d= -f2)
+I=$($A php artisan tinker --execute='echo PHP_EOL."ID=".DB::table("oauth_clients")->where("password_client",1)->value("id").PHP_EOL;' 2>/dev/null | grep -oE '^ID=[0-9]+' | cut -d= -f2)
+[ ${#S} -eq 40 ] && sed -i "s/^PASSPORT_CLIENT_ID=.*/PASSPORT_CLIENT_ID=$I/; s/^PASSPORT_CLIENT_SECRET=.*/PASSPORT_CLIENT_SECRET=$S/" .env; unset S
+# El contenedor lee el .env al crearse: recrear y rehacer cachés
+docker compose up -d --no-deps --force-recreate app worker-default worker-pqrsd worker-filing scheduler reverb
+bash scripts/deploy-laravel.sh
 ```
 
 #### SECRET_KEY (frontend)
@@ -443,6 +437,32 @@ bash scripts/deploy-front.sh
 4. **Recrea nginx** (fix bind mount):
    - `docker compose rm -f nginx` elimina el contenedor con el mount roto
    - `docker compose up -d nginx` lo recrea con el nuevo inodo
+
+## 7b. Reiniciar un ambiente de demo desde cero (base, Passport, Redis, archivos, B2)
+
+**Destructivo e irreversible.** Solo en el ambiente de demo/staging y con autorización explícita. Nunca
+en la instancia de un cliente. (Hecho el 2026-09-28 en demo.aviliontech.com.)
+
+1. *(Recomendado)* respaldo final: `bash scripts/backup.sh` (queda en restic, bucket `SGD-BACKUPS`, que
+   **no** es el bucket de la app).
+2. Detener lo que procesa en segundo plano:
+   `docker compose stop worker-default worker-pqrsd worker-filing scheduler`
+3. Base nueva con datos iniciales (única vez en que se corren seeders, y solo con autorización):
+   `$A php artisan migrate:fresh --seed --force` → crea tablas y el admin `SytemasMR7` (cambiar su
+   contraseña al entrar: la del seeder está en el código). Las secciones quedan con su `area`.
+4. Passport nuevo: `$A php artisan passport:keys --force`, luego
+   `$A php artisan passport:client --personal --name="SGD Personal Access Client" --no-interaction` y
+   `$A php artisan passport:client --password --name="SGD Password Grant Client" --provider=users --no-interaction`;
+   después actualizar el `.env` como en **3.3 › Passport** (sin imprimir el secreto).
+5. Redis: `docker compose exec -T redis sh -c 'REDISCLI_AUTH="$REDIS_PASSWORD" redis-cli FLUSHALL'`.
+6. Archivos locales: vaciar `storage/app/public/*` y `storage/app/report-exports/*` del contenedor `app`
+   (**no** borrar `storage/oauth-*.key`). OSAI: vaciar `data/pending_webhooks`,
+   `data/pending_portal_webhooks` y `data/dead_webhooks`.
+7. B2 de la app (`B2_BUCKET`): borrar **todas las versiones** (listObjectVersions + deleteObjects); un
+   `deleteObject` simple solo oculta el archivo y sigue ocupando espacio. Verificar que el bucket es el
+   de la app y no `SGD-BACKUPS`.
+8. Recrear contenedores y cachés (último bloque de 3.3 › Passport) y `bash scripts/healthcheck.sh`
+   (15 OK). Probar login real.
 
 ## 8. Verificar el despliegue
 
