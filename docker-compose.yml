@@ -237,6 +237,23 @@ services:
       - sgd-network
 
   # ============================================
+  # Worker del chat IA (cola chat-ai)
+  # Cola propia: el chat es interactivo y no debe esperar tras lotes de la
+  # ventanilla (filing-ai) ni de la ventanilla pública (pqrsd-ai). tries=1: el
+  # chat no se reintenta (duplicaría la respuesta en pantalla y el costo de IA).
+  # ============================================
+  worker-chat:
+    extends:
+      service: worker-pqrsd
+    command: php artisan queue:work --queue=chat-ai --sleep=1 --timeout=200 --tries=1 --max-time=86400
+    mem_limit: ${MEM_LIMIT_CHAT:-512m}
+    deploy:
+      replicas: ${WORKER_CHAT_REPLICAS:-1}
+    depends_on:
+      app:
+        condition: service_started
+
+  # ============================================
   # Laravel Scheduler (cron interno)
   # ============================================
   scheduler:
