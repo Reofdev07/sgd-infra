@@ -190,7 +190,7 @@ S=$($A php artisan tinker --execute='echo PHP_EOL."SECRET=".DB::table("oauth_cli
 I=$($A php artisan tinker --execute='echo PHP_EOL."ID=".DB::table("oauth_clients")->where("password_client",1)->value("id").PHP_EOL;' 2>/dev/null | grep -oE '^ID=[0-9]+' | cut -d= -f2)
 [ ${#S} -eq 40 ] && sed -i "s/^PASSPORT_CLIENT_ID=.*/PASSPORT_CLIENT_ID=$I/; s/^PASSPORT_CLIENT_SECRET=.*/PASSPORT_CLIENT_SECRET=$S/" .env; unset S
 # El contenedor lee el .env al crearse: recrear y rehacer cachés
-docker compose up -d --no-deps --force-recreate app worker-default worker-pqrsd worker-filing scheduler reverb
+docker compose up -d --no-deps --force-recreate app worker-default worker-pqrsd worker-filing worker-chat scheduler reverb
 bash scripts/deploy-laravel.sh
 ```
 
@@ -446,7 +446,7 @@ en la instancia de un cliente. (Hecho el 2026-09-28 en demo.aviliontech.com.)
 1. *(Recomendado)* respaldo final: `bash scripts/backup.sh` (queda en restic, bucket `SGD-BACKUPS`, que
    **no** es el bucket de la app).
 2. Detener lo que procesa en segundo plano:
-   `docker compose stop worker-default worker-pqrsd worker-filing scheduler`
+   `docker compose stop worker-default worker-pqrsd worker-filing worker-chat scheduler`
 3. Base nueva con datos iniciales (única vez en que se corren seeders, y solo con autorización):
    `$A php artisan migrate:fresh --seed --force` → crea tablas y el admin `SytemasMR7` (cambiar su
    contraseña al entrar: la del seeder está en el código). Las secciones quedan con su `area`.
