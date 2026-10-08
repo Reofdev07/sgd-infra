@@ -87,6 +87,9 @@ services:
       - APP_NAME=${APP_NAME:-SGD}
       - APP_ENV=production
       - APP_KEY=${APP_KEY:?APP_KEY es obligatorio}
+      # Firma del índice electrónico (Acuerdo AGN 001/2024): misma clave en app, workers y scheduler.
+      - ARCHIVE_INDEX_SIGNING_KEY=${ARCHIVE_INDEX_SIGNING_KEY:-}
+      - ARCHIVE_INDEX_SIGNING_KEY_ID=${ARCHIVE_INDEX_SIGNING_KEY_ID:-}
       - APP_DEBUG=false
       - APP_URL=https://${DOMAIN:-localhost}
       - FRONTEND_URL=https://${DOMAIN:-localhost}
@@ -160,6 +163,9 @@ services:
       - QUEUE_RETRY_AFTER=${QUEUE_RETRY_AFTER:-600}
       - BROADCAST_DRIVER=reverb
       - APP_KEY=${APP_KEY:?APP_KEY es obligatorio}
+      # Firma del índice electrónico (Acuerdo AGN 001/2024): misma clave en app, workers y scheduler.
+      - ARCHIVE_INDEX_SIGNING_KEY=${ARCHIVE_INDEX_SIGNING_KEY:-}
+      - ARCHIVE_INDEX_SIGNING_KEY_ID=${ARCHIVE_INDEX_SIGNING_KEY_ID:-}
       - APP_URL=https://${DOMAIN:-localhost}
       - REVERB_APP_KEY=${REVERB_APP_KEY:?REVERB_APP_KEY es obligatorio}
       - REVERB_APP_SECRET=${REVERB_APP_SECRET:?REVERB_APP_SECRET es obligatorio}
@@ -223,6 +229,9 @@ services:
       - QUEUE_RETRY_AFTER=${QUEUE_RETRY_AFTER:-600}
       - BROADCAST_DRIVER=reverb
       - APP_KEY=${APP_KEY:?APP_KEY es obligatorio}
+      # Firma del índice electrónico (Acuerdo AGN 001/2024): misma clave en app, workers y scheduler.
+      - ARCHIVE_INDEX_SIGNING_KEY=${ARCHIVE_INDEX_SIGNING_KEY:-}
+      - ARCHIVE_INDEX_SIGNING_KEY_ID=${ARCHIVE_INDEX_SIGNING_KEY_ID:-}
       - APP_URL=https://${DOMAIN:-localhost}
       - REVERB_APP_KEY=${REVERB_APP_KEY:?REVERB_APP_KEY es obligatorio}
       - REVERB_APP_SECRET=${REVERB_APP_SECRET:?REVERB_APP_SECRET es obligatorio}
@@ -313,6 +322,9 @@ services:
       - REDIS_PORT=6379
       - CACHE_DRIVER=redis
       - APP_KEY=${APP_KEY:?APP_KEY es obligatorio}
+      # Firma del índice electrónico (Acuerdo AGN 001/2024): misma clave en app, workers y scheduler.
+      - ARCHIVE_INDEX_SIGNING_KEY=${ARCHIVE_INDEX_SIGNING_KEY:-}
+      - ARCHIVE_INDEX_SIGNING_KEY_ID=${ARCHIVE_INDEX_SIGNING_KEY_ID:-}
       - APP_URL=https://${DOMAIN:-localhost}
     depends_on:
       app:
