@@ -287,6 +287,16 @@ LANGSMITH_API_KEY=...
 
 Solo si usas LangSmith para debuggear llamadas a la IA. En producción se recomienda `false` para evitar overhead.
 
+#### Portal ciudadano: buscadores y dominios
+
+| Variable | Valor por defecto | Qué hace |
+|---|---|---|
+| `PORTAL_INDEXABLE` | `false` | Con `true`, `deploy-front.sh` genera un `robots.txt` que permite las páginas informativas del portal y un `sitemap.xml`. Con cualquier otro valor el `robots.txt` bloquea todo el sitio. Encenderlo solo en la instalación definitiva de la entidad, nunca en una de pruebas. |
+| `CORS_ALLOWED_ORIGINS` | vacío | Dominios adicionales que pueden llamar a la API desde el navegador, separados por comas. Vacío deja solo el dominio del portal (`DOMAIN`). Solo hace falta si el portal se sirve desde otro dominio distinto al de la API. |
+
+Ni el sistema interno ni las direcciones con número de radicado o código se ofrecen nunca a los buscadores.
+Comprobar tras desplegar: `curl -s https://$DOMAIN/robots.txt`.
+
 ### 3.4 Verificar que el .env está completo
 
 Revisa que no haya valores como `coloca_aqui...` sin reemplazar:

@@ -9,6 +9,7 @@ if [ -f .env ]; then
 fi
 
 FRONT_DIR="${FRONTEND_PATH:-../SGD-Front}"
+INFRA_DIR="$(pwd)"
 
 echo "=== Deploy Frontend ==="
 
@@ -60,6 +61,10 @@ cat > dist/pwa/config.json <<JSON
 JSON
 
 echo "config.json generado para DOMAIN=$DOMAIN (${REVERB_SCHEME}://${DOMAIN}:${REVERB_PORT})"
+
+# --- robots.txt y mapa del sitio (apagado salvo PORTAL_INDEXABLE=true en .env) ---
+source "$INFRA_DIR/scripts/lib/portal-seo.sh"
+write_portal_seo dist/pwa "$DOMAIN" "${PORTAL_INDEXABLE:-false}"
 
 # --- Hornear el commit en version.json para poder verificar qué versión está desplegada ---
 GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
