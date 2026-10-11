@@ -33,6 +33,13 @@ write_portal_seo() {
         echo "User-agent: *"
         echo "Allow: /public"
         echo "Allow: /verificar\$"
+        # El portal es una aplicación: el buscador necesita sus archivos y los datos públicos con que se pinta
+        # (nombre de la entidad, textos). Nada de esto lleva datos de un radicado.
+        echo "Allow: /assets/"
+        echo "Allow: /icons/"
+        echo "Allow: /config.json"
+        echo "Allow: /api/public/portal"
+        echo "Allow: /api/public/ventanilla/config"
         echo "Disallow: /"
         echo ""
         echo "Sitemap: https://${domain}/sitemap.xml"

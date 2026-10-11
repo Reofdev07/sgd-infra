@@ -21,6 +21,11 @@ check "robots apunta al mapa del sitio" has "$DIR/robots.txt" "Sitemap: https://
 check "robots permite el portal" has "$DIR/robots.txt" "Allow: /public"
 check "robots bloquea lo demás (sistema interno, inicio de sesión)" has "$DIR/robots.txt" "Disallow: /"
 check "robots no nombra rutas internas" lacks "$DIR/robots.txt" "login"
+# El portal es una aplicación: sin sus archivos y sus datos públicos el buscador solo vería una página vacía.
+for needed in "Allow: /assets/" "Allow: /icons/" "Allow: /config.json" "Allow: /api/public/portal" "Allow: /api/public/ventanilla/config"; do
+    check "robots deja leer lo que la página necesita: $needed" has "$DIR/robots.txt" "$needed"
+done
+check "robots no abre el resto de la API" lacks "$DIR/robots.txt" "Allow: /api/public/documents"
 check "el mapa lista las nueve páginas" test "$(grep -c '<loc>' "$DIR/sitemap.xml")" = "9"
 check "el mapa incluye Radicar" has "$DIR/sitemap.xml" "<loc>https://alcaldia.gov.co/public/radicar</loc>"
 check "el mapa incluye Verificar" has "$DIR/sitemap.xml" "<loc>https://alcaldia.gov.co/verificar</loc>"
