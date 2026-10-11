@@ -77,6 +77,11 @@ services:
       - CACHE_DRIVER=redis
       - QUEUE_CONNECTION=redis
       - QUEUE_RETRY_AFTER=${QUEUE_RETRY_AFTER:-600}
+      # Portal ciudadano (entrega 2A). La caché de configuración se arma en este contenedor: basta declararlas aquí.
+      # PORTAL_POW_ENFORCE=true solo con el front que resuelve la prueba de trabajo ya servido.
+      - PORTAL_POW_ENFORCE=${PORTAL_POW_ENFORCE:-false}
+      - PORTAL_POW_BITS=${PORTAL_POW_BITS:-16}
+      - PORTAL_MAX_FILINGS_PER_EMAIL=${PORTAL_MAX_FILINGS_PER_EMAIL:-10}
       - SESSION_DRIVER=redis
       - BROADCAST_DRIVER=reverb
       # Pool PHP-FPM: se ajusta desde sgd-infra/.env segun la RAM del VPS
