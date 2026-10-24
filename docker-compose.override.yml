@@ -11,6 +11,28 @@ services:
   oracle-xe:
     restart: "no"
 
+  # Postgres de desarrollo (migración Oracle → Postgres). Bases: sgd y sgd_test.
+  # Levantar solo este servicio: docker compose up -d postgres  (en WSL: docker.exe compose …)
+  postgres:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: sgd
+      POSTGRES_USER: sgd
+      POSTGRES_PASSWORD: sgd
+    ports:
+      - "5433:5432"
+    volumes:
+      - pg_data_local:/var/lib/postgresql/data
+    configs:
+      - source: pg_init_local
+        target: /docker-entrypoint-initdb.d/01-bases-locales.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sgd -d sgd"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   app:
     image: sgd-php:latest
     build: !reset null
@@ -93,3 +115,16 @@ services:
   osai:
     image: sgd-osai:latest
     build: !reset null
+volumes:
+  pg_data_local:
+
+configs:
+  # Solo desarrollo local: base de pruebas aparte y extensiones en ambas bases.
+  pg_init_local:
+    content: |
+      CREATE DATABASE sgd_test OWNER sgd;
+      CREATE EXTENSION IF NOT EXISTS vector;
+      CREATE EXTENSION IF NOT EXISTS unaccent;
+      \connect sgd_test
+      CREATE EXTENSION IF NOT EXISTS vector;
+      CREATE EXTENSION IF NOT EXISTS unaccent;
