@@ -14,6 +14,10 @@ else
 fi
 export COMPOSE_FILE
 
+# Base activa (DB_CONNECTION del .env): se revisa solo esa, así el total esperado sigue siendo el mismo.
+DB_ENGINE=$(grep -E '^DB_CONNECTION=' .env 2>/dev/null | tail -1 | cut -d= -f2 | tr -d "\"' ")
+DB_ENGINE="${DB_ENGINE:-oracle}"
+
 echo "=== Health Check SGD ==="
 PASS=0
 FAIL=0
@@ -61,7 +65,11 @@ send_telegram() {
 # puede escribirlo y toda excepción registrada termina en 500. XDG_* en /tmp: HOME de www-data es de root (PsySH).
 ARTISAN_USER="-u www-data -e XDG_CONFIG_HOME=/tmp -e XDG_DATA_HOME=/tmp -e XDG_RUNTIME_DIR=/tmp"
 
-check "Oracle XE"        "docker compose ps oracle-xe | grep -q 'healthy'"
+if [ "$DB_ENGINE" = "pgsql" ]; then
+    check "PostgreSQL"       "docker compose ps postgres | grep -q 'healthy'"
+else
+    check "Oracle XE"        "docker compose ps oracle-xe | grep -q 'healthy'"
+fi
 check "Redis"            "docker compose ps redis | grep -q 'healthy'"
 check "Laravel App"      "docker compose ps app | grep -q '(healthy)'"
 check "Worker Default"   "docker compose ps worker-default | grep -q 'Up'"
@@ -84,7 +92,7 @@ check "OSAI /info"       "docker compose exec -T osai curl -sf http://localhost:
 # Frontend via HTTPS (Traefik → nginx → SPA)
 check "Frontend SPA"     "curl -sfk https://demo.aviliontech.com/ | grep -q 'id=q-app'"
 
-# Salud de colas: failed_jobs (Oracle), backlog en Redis y uso de memoria.
+# Salud de colas: failed_jobs (base de datos), backlog en Redis y uso de memoria.
 # queue:health devuelve exit≠0 si se superan los umbrales (SGD-061).
 QUEUE_RC=0
 QUEUE_OUT=$(docker compose exec -T $ARTISAN_USER app php artisan queue:health --max-failed=0 --max-pending=200 2>&1) || QUEUE_RC=$?
@@ -120,16 +128,19 @@ if [ -n "$QUEUE_FILING" ] && [ "$QUEUE_FILING" -gt 50 ] 2>/dev/null; then
     FAILED_CHECKS="${FAILED_CHECKS}- Cola filing-ai: ${QUEUE_FILING} pendientes (>50)\n"
 fi
 
-# Tamaño de Oracle: alerta temprana antes de alcanzar el límite duro de 12 GB (SGD-110).
+# Tamaño de la base: Postgres avisa al pasar DB_SIZE_ALERT_GB (config de Laravel); Oracle XE, antes de su
+# límite duro de 12 GB (SGD-110).
+DBSIZE_ARGS=""
+[ "$DB_ENGINE" = "pgsql" ] || DBSIZE_ARGS="--max-gb=8"
 DBSIZE_RC=0
-DBSIZE_OUT=$(docker compose exec -T $ARTISAN_USER app php artisan db:size --max-gb=8 2>&1) || DBSIZE_RC=$?
+DBSIZE_OUT=$(docker compose exec -T $ARTISAN_USER app php artisan db:size $DBSIZE_ARGS 2>&1) || DBSIZE_RC=$?
 if [ "$DBSIZE_RC" -eq 0 ]; then
-    echo "  [OK] Tamaño Oracle"
+    echo "  [OK] Tamaño de la base"
     PASS=$((PASS+1))
 else
-    echo "  [FAIL] Tamaño Oracle"
+    echo "  [FAIL] Tamaño de la base"
     FAIL=$((FAIL+1))
-    FAILED_CHECKS="${FAILED_CHECKS}- Tamaño Oracle\n"
+    FAILED_CHECKS="${FAILED_CHECKS}- Tamaño de la base\n"
 fi
 
 echo ""
@@ -147,7 +158,7 @@ $(echo -e "$FAILED_CHECKS")
 ━━ Colas ━━
 ${QUEUE_OUT}
 
-━━ Oracle ━━
+━━ Base de datos ━━
 ${DBSIZE_OUT}"
     send_telegram "$MSG"
 fi

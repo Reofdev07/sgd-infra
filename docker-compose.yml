@@ -10,16 +10,40 @@ services:
     mem_limit: ${MEM_LIMIT_ORACLE:-3g}
     environment:
       ORACLE_PASSWORD: ${ORACLE_PASSWORD:-StrongPassword123!}
-      APP_USER: ${DB_USERNAME:-SGD_MR7}
-      APP_USER_PASSWORD: ${DB_PASSWORD:-sgd123}
+      # Usuario de la app en Oracle: tras el cambio a Postgres, DB_* es de Postgres y Oracle usa ORACLE_DB_*.
+      APP_USER: ${ORACLE_DB_USERNAME:-${DB_USERNAME:-SGD_MR7}}
+      APP_USER_PASSWORD: ${ORACLE_DB_PASSWORD:-${DB_PASSWORD:-sgd123}}
     volumes:
       - oracle_data:/opt/oracle/oradata
     healthcheck:
-      test: ["CMD-SHELL", "echo 'SELECT 1 FROM DUAL;' | sqlplus -S ${DB_USERNAME:-SGD_MR7}/${DB_PASSWORD:-sgd123}@localhost/XEPDB1"]
+      test: ["CMD-SHELL", "echo 'SELECT 1 FROM DUAL;' | sqlplus -S ${ORACLE_DB_USERNAME:-${DB_USERNAME:-SGD_MR7}}/${ORACLE_DB_PASSWORD:-${DB_PASSWORD:-sgd123}}@localhost/XEPDB1"]
       interval: 30s
       timeout: 10s
       retries: 10
       start_period: 120s
+    networks:
+      - sgd-network
+
+  # ============================================
+  # Base de datos PostgreSQL + pgvector
+  # (convive con oracle-xe hasta la limpieza final; qué base usa la app se decide en .env con DB_*)
+  # ============================================
+  postgres:
+    image: pgvector/pgvector:pg17
+    restart: always
+    mem_limit: ${MEM_LIMIT_POSTGRES:-1g}
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-sgd}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD en sgd-infra/.env}
+      POSTGRES_DB: ${POSTGRES_DB:-sgd}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
     networks:
       - sgd-network
 
@@ -55,13 +79,20 @@ services:
       - ${LARAVEL_PATH:-../SDG-Back-api}:/var/www/html
       - app_storage:/var/www/html/storage
     environment:
-      - DB_CONNECTION=oracle
-      - DB_HOST=oracle-xe
-      - DB_PORT=1521
-      - DB_DATABASE=XEPDB1
+      - DB_CONNECTION=${DB_CONNECTION:-oracle}
+      - DB_HOST=${DB_HOST:-oracle-xe}
+      - DB_PORT=${DB_PORT:-1521}
+      - DB_DATABASE=${DB_DATABASE:-XEPDB1}
       - DB_USERNAME=${DB_USERNAME:-SGD_MR7}
       - DB_PASSWORD=${DB_PASSWORD:-sgd123}
       - DB_SERVICE_NAME=XEPDB1
+      - ORACLE_DB_HOST=oracle-xe
+      - ORACLE_DB_PORT=1521
+      - ORACLE_DB_DATABASE=XEPDB1
+      - ORACLE_DB_SERVICE_NAME=XEPDB1
+      - ORACLE_DB_USERNAME=${ORACLE_DB_USERNAME:-${DB_USERNAME:-SGD_MR7}}
+      - ORACLE_DB_PASSWORD=${ORACLE_DB_PASSWORD:-${DB_PASSWORD:-sgd123}}
+      - DB_SIZE_ALERT_GB=${DB_SIZE_ALERT_GB:-20}
       - REDIS_HOST=redis
       - REDIS_PASSWORD=${REDIS_PASSWORD:-}
       - REDIS_PORT=6379
@@ -118,6 +149,8 @@ services:
     depends_on:
       oracle-xe:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
     networks:
@@ -140,13 +173,20 @@ services:
     deploy:
       replicas: ${WORKER_DEFAULT_REPLICAS:-1}
     environment:
-      - DB_CONNECTION=oracle
-      - DB_HOST=oracle-xe
-      - DB_PORT=1521
-      - DB_DATABASE=XEPDB1
+      - DB_CONNECTION=${DB_CONNECTION:-oracle}
+      - DB_HOST=${DB_HOST:-oracle-xe}
+      - DB_PORT=${DB_PORT:-1521}
+      - DB_DATABASE=${DB_DATABASE:-XEPDB1}
       - DB_USERNAME=${DB_USERNAME:-SGD_MR7}
       - DB_PASSWORD=${DB_PASSWORD:-sgd123}
       - DB_SERVICE_NAME=XEPDB1
+      - ORACLE_DB_HOST=oracle-xe
+      - ORACLE_DB_PORT=1521
+      - ORACLE_DB_DATABASE=XEPDB1
+      - ORACLE_DB_SERVICE_NAME=XEPDB1
+      - ORACLE_DB_USERNAME=${ORACLE_DB_USERNAME:-${DB_USERNAME:-SGD_MR7}}
+      - ORACLE_DB_PASSWORD=${ORACLE_DB_PASSWORD:-${DB_PASSWORD:-sgd123}}
+      - DB_SIZE_ALERT_GB=${DB_SIZE_ALERT_GB:-20}
       - REDIS_HOST=redis
       - REDIS_PASSWORD=${REDIS_PASSWORD:-}
       - REDIS_PORT=6379
@@ -200,13 +240,20 @@ services:
     deploy:
       replicas: ${WORKER_PQRSD_REPLICAS:-1}
     environment:
-      - DB_CONNECTION=oracle
-      - DB_HOST=oracle-xe
-      - DB_PORT=1521
-      - DB_DATABASE=XEPDB1
+      - DB_CONNECTION=${DB_CONNECTION:-oracle}
+      - DB_HOST=${DB_HOST:-oracle-xe}
+      - DB_PORT=${DB_PORT:-1521}
+      - DB_DATABASE=${DB_DATABASE:-XEPDB1}
       - DB_USERNAME=${DB_USERNAME:-SGD_MR7}
       - DB_PASSWORD=${DB_PASSWORD:-sgd123}
       - DB_SERVICE_NAME=XEPDB1
+      - ORACLE_DB_HOST=oracle-xe
+      - ORACLE_DB_PORT=1521
+      - ORACLE_DB_DATABASE=XEPDB1
+      - ORACLE_DB_SERVICE_NAME=XEPDB1
+      - ORACLE_DB_USERNAME=${ORACLE_DB_USERNAME:-${DB_USERNAME:-SGD_MR7}}
+      - ORACLE_DB_PASSWORD=${ORACLE_DB_PASSWORD:-${DB_PASSWORD:-sgd123}}
+      - DB_SIZE_ALERT_GB=${DB_SIZE_ALERT_GB:-20}
       - REDIS_HOST=redis
       - REDIS_PASSWORD=${REDIS_PASSWORD:-}
       - REDIS_PORT=6379
@@ -275,13 +322,20 @@ services:
       - app_storage:/var/www/html/storage
     command: php artisan schedule:work --verbose
     environment:
-      - DB_CONNECTION=oracle
-      - DB_HOST=oracle-xe
-      - DB_PORT=1521
-      - DB_DATABASE=XEPDB1
+      - DB_CONNECTION=${DB_CONNECTION:-oracle}
+      - DB_HOST=${DB_HOST:-oracle-xe}
+      - DB_PORT=${DB_PORT:-1521}
+      - DB_DATABASE=${DB_DATABASE:-XEPDB1}
       - DB_USERNAME=${DB_USERNAME:-SGD_MR7}
       - DB_PASSWORD=${DB_PASSWORD:-sgd123}
       - DB_SERVICE_NAME=XEPDB1
+      - ORACLE_DB_HOST=oracle-xe
+      - ORACLE_DB_PORT=1521
+      - ORACLE_DB_DATABASE=XEPDB1
+      - ORACLE_DB_SERVICE_NAME=XEPDB1
+      - ORACLE_DB_USERNAME=${ORACLE_DB_USERNAME:-${DB_USERNAME:-SGD_MR7}}
+      - ORACLE_DB_PASSWORD=${ORACLE_DB_PASSWORD:-${DB_PASSWORD:-sgd123}}
+      - DB_SIZE_ALERT_GB=${DB_SIZE_ALERT_GB:-20}
       - REDIS_HOST=redis
       - REDIS_PASSWORD=${REDIS_PASSWORD:-}
       - REDIS_PORT=6379
@@ -309,13 +363,20 @@ services:
       - app_storage:/var/www/html/storage
     command: php artisan reverb:start --host=0.0.0.0 --port=8080
     environment:
-      - DB_CONNECTION=oracle
-      - DB_HOST=oracle-xe
-      - DB_PORT=1521
-      - DB_DATABASE=XEPDB1
+      - DB_CONNECTION=${DB_CONNECTION:-oracle}
+      - DB_HOST=${DB_HOST:-oracle-xe}
+      - DB_PORT=${DB_PORT:-1521}
+      - DB_DATABASE=${DB_DATABASE:-XEPDB1}
       - DB_USERNAME=${DB_USERNAME:-SGD_MR7}
       - DB_PASSWORD=${DB_PASSWORD:-sgd123}
       - DB_SERVICE_NAME=XEPDB1
+      - ORACLE_DB_HOST=oracle-xe
+      - ORACLE_DB_PORT=1521
+      - ORACLE_DB_DATABASE=XEPDB1
+      - ORACLE_DB_SERVICE_NAME=XEPDB1
+      - ORACLE_DB_USERNAME=${ORACLE_DB_USERNAME:-${DB_USERNAME:-SGD_MR7}}
+      - ORACLE_DB_PASSWORD=${ORACLE_DB_PASSWORD:-${DB_PASSWORD:-sgd123}}
+      - DB_SIZE_ALERT_GB=${DB_SIZE_ALERT_GB:-20}
       - REDIS_HOST=redis
       - REDIS_PASSWORD=${REDIS_PASSWORD:-}
       - REDIS_PORT=6379
@@ -415,6 +476,7 @@ services:
 
 volumes:
   oracle_data:
+  pg_data:
   redis_data:
   app_storage:
   osai_data:

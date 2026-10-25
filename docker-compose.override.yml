@@ -1,8 +1,8 @@
 # docker-compose.override.yml — Override para desarrollo local
-# Reusa el Oracle XE existente del host + imágenes pre-compiladas
+# Postgres local (servicio postgres) + imágenes pre-compiladas; Oracle Free del host solo como origen del traslado
 #
 # USO LOCAL:
-#   docker compose up -d redis app worker-default worker-pqrsd scheduler reverb osai nginx
+#   docker compose up -d postgres redis app worker-default worker-pqrsd scheduler reverb osai nginx
 #
 # Para producción en el VPS: renombra este archivo:
 #   mv docker-compose.override.yml docker-compose.override.yml.bak
@@ -40,11 +40,19 @@ services:
       redis:
         condition: service_healthy
     environment:
-      - DB_HOST=host.docker.internal
-      - DB_PORT=1522
-      - DB_USERNAME=SGD_MR7
-      - DB_PASSWORD=sgd123
-      - DB_SERVICE_NAME=FREEPDB1
+      - DB_CONNECTION=pgsql
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_DATABASE=sgd
+      - DB_USERNAME=sgd
+      - DB_PASSWORD=sgd
+      # Origen del traslado (db:migrate-from-oracle): Oracle Free del host, hasta la limpieza.
+      - ORACLE_DB_HOST=host.docker.internal
+      - ORACLE_DB_PORT=1522
+      - ORACLE_DB_USERNAME=SGD_MR7
+      - ORACLE_DB_PASSWORD=sgd123
+      - ORACLE_DB_SERVICE_NAME=FREEPDB1
+      - ORACLE_DB_DATABASE=FREEPDB1
       - APP_ENV=local
       - APP_DEBUG=true
     extra_hosts:
@@ -57,11 +65,19 @@ services:
       app:
         condition: service_started
     environment:
-      - DB_HOST=host.docker.internal
-      - DB_PORT=1522
-      - DB_USERNAME=SGD_MR7
-      - DB_PASSWORD=sgd123
-      - DB_SERVICE_NAME=FREEPDB1
+      - DB_CONNECTION=pgsql
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_DATABASE=sgd
+      - DB_USERNAME=sgd
+      - DB_PASSWORD=sgd
+      # Origen del traslado (db:migrate-from-oracle): Oracle Free del host, hasta la limpieza.
+      - ORACLE_DB_HOST=host.docker.internal
+      - ORACLE_DB_PORT=1522
+      - ORACLE_DB_USERNAME=SGD_MR7
+      - ORACLE_DB_PASSWORD=sgd123
+      - ORACLE_DB_SERVICE_NAME=FREEPDB1
+      - ORACLE_DB_DATABASE=FREEPDB1
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
@@ -72,11 +88,19 @@ services:
       app:
         condition: service_started
     environment:
-      - DB_HOST=host.docker.internal
-      - DB_PORT=1522
-      - DB_USERNAME=SGD_MR7
-      - DB_PASSWORD=sgd123
-      - DB_SERVICE_NAME=FREEPDB1
+      - DB_CONNECTION=pgsql
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_DATABASE=sgd
+      - DB_USERNAME=sgd
+      - DB_PASSWORD=sgd
+      # Origen del traslado (db:migrate-from-oracle): Oracle Free del host, hasta la limpieza.
+      - ORACLE_DB_HOST=host.docker.internal
+      - ORACLE_DB_PORT=1522
+      - ORACLE_DB_USERNAME=SGD_MR7
+      - ORACLE_DB_PASSWORD=sgd123
+      - ORACLE_DB_SERVICE_NAME=FREEPDB1
+      - ORACLE_DB_DATABASE=FREEPDB1
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
@@ -87,11 +111,19 @@ services:
       app:
         condition: service_started
     environment:
-      - DB_HOST=host.docker.internal
-      - DB_PORT=1522
-      - DB_USERNAME=SGD_MR7
-      - DB_PASSWORD=sgd123
-      - DB_SERVICE_NAME=FREEPDB1
+      - DB_CONNECTION=pgsql
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_DATABASE=sgd
+      - DB_USERNAME=sgd
+      - DB_PASSWORD=sgd
+      # Origen del traslado (db:migrate-from-oracle): Oracle Free del host, hasta la limpieza.
+      - ORACLE_DB_HOST=host.docker.internal
+      - ORACLE_DB_PORT=1522
+      - ORACLE_DB_USERNAME=SGD_MR7
+      - ORACLE_DB_PASSWORD=sgd123
+      - ORACLE_DB_SERVICE_NAME=FREEPDB1
+      - ORACLE_DB_DATABASE=FREEPDB1
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
@@ -104,11 +136,19 @@ services:
       redis:
         condition: service_healthy
     environment:
-      - DB_HOST=host.docker.internal
-      - DB_PORT=1522
-      - DB_USERNAME=SGD_MR7
-      - DB_PASSWORD=sgd123
-      - DB_SERVICE_NAME=FREEPDB1
+      - DB_CONNECTION=pgsql
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_DATABASE=sgd
+      - DB_USERNAME=sgd
+      - DB_PASSWORD=sgd
+      # Origen del traslado (db:migrate-from-oracle): Oracle Free del host, hasta la limpieza.
+      - ORACLE_DB_HOST=host.docker.internal
+      - ORACLE_DB_PORT=1522
+      - ORACLE_DB_USERNAME=SGD_MR7
+      - ORACLE_DB_PASSWORD=sgd123
+      - ORACLE_DB_SERVICE_NAME=FREEPDB1
+      - ORACLE_DB_DATABASE=FREEPDB1
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
