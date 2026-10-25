@@ -58,7 +58,7 @@ docker compose exec -T -e FORZAR_COMPOSER="${FORZAR_COMPOSER:-0}" app sh -c '
     echo "$huella" > vendor/.composer-lock.sha256
     rm -rf vendor.anterior
     echo "Dependencias instaladas desde composer.lock."
-'
+' < /dev/null
 
 # Migraciones (solo las pendientes, seguro de repetir)
 echo "Ejecutando migraciones..."
