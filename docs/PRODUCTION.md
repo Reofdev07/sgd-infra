@@ -121,8 +121,8 @@ DB_PASSWORD=...              # obligatoria: contraseña de sgd_app
 ```
 
 - `POSTGRES_PASSWORD`: contraseña del superusuario `sgd` (respaldos y administración). **Usa una segura.**
-- `DB_USERNAME` / `DB_PASSWORD`: rol `sgd_app` de la app, sin superusuario. Se crea una vez en la
-  instalación nueva (sección 6.0). Sin `DB_PASSWORD` docker compose no arranca.
+- `DB_USERNAME` / `DB_PASSWORD`: rol `sgd_app` de la app, sin superusuario. Lo crea Postgres solo la primera
+  vez que arranca con el volumen vacío (sección 6.0). Sin `DB_PASSWORD` docker compose no arranca.
 - `POSTGRES_USER` / `POSTGRES_DB`: usuario y base (por defecto `sgd`).
 - `DB_SIZE_ALERT_GB`: tamaño de la base desde el que `healthcheck.sh` marca FAIL (por defecto 20).
 - El servicio `postgres` no publica puertos: solo lo ve la red interna de Docker.
@@ -371,23 +371,17 @@ Todos deben mostrar `Up` o `healthy`.
 
 ## 6. Setup de Laravel
 
-### 6.0 Instalación nueva: rol de la app y extensiones (una sola vez)
+### 6.0 Instalación nueva (una sola vez)
 
-Solo en una instalación nueva, con la base vacía. Se hace **antes** de la primera migración.
+Solo en una instalación nueva, con el volumen de Postgres vacío.
 Variables: `C="docker compose -f docker-compose.dockploy.yml"` (desde `/home/deploy/sgd-infra`).
 
-1. Levantar Postgres y esperar `healthy`: `$C up -d postgres`.
-2. Crear el rol de la app (sin superusuario) y las extensiones, como superusuario. La contraseña es la
-   de `DB_PASSWORD` (leerla con `read -rs SGD_APP_PASSWORD`, nunca en el historial):
-   ```bash
-   $C exec -T postgres psql -U sgd -d sgd -v ON_ERROR_STOP=1 -v pass="$SGD_APP_PASSWORD" <<'SQL'
-   CREATE ROLE sgd_app LOGIN PASSWORD :'pass';
-   ALTER DATABASE sgd OWNER TO sgd_app;
-   ALTER SCHEMA public OWNER TO sgd_app;
-   CREATE EXTENSION IF NOT EXISTS vector;
-   CREATE EXTENSION IF NOT EXISTS unaccent;
-   SQL
-   ```
+1. En `.env`: `POSTGRES_PASSWORD` (superusuario) y `DB_PASSWORD` (rol `sgd_app`), distintas.
+2. Levantar Postgres y esperar `healthy`: `$C up -d postgres`. La **primera vez** que arranca con el volumen
+   vacío, su script de inicio (`configs › pg_init_sgd_app` del compose) crea el rol `sgd_app` sin superusuario
+   con la contraseña de `DB_PASSWORD`, le da la base y el esquema `public`, y activa `vector` y `unaccent`.
+   Comprobar: `$C exec -T postgres psql -U sgd -d sgd -Atc "select rolsuper from pg_roles where rolname = 'sgd_app'"` → `f`.
+   Si el volumen ya existía, el script no corre (no toca una base con datos).
 3. Levantar el resto: `$C up -d`.
 4. Migrar y sembrar (solo esta vez): `SEED=true bash scripts/deploy-laravel.sh`.
    Corre las 85 migraciones y los seeders: roles, permisos, pantallas, secciones, geografía, catálogos,

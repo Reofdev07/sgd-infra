@@ -237,7 +237,7 @@ docker compose build osai   # FastAPI (~10 min)
 
 ## Fase 10 — Setup Laravel (hago yo)
 
-Instalación nueva: primero crear el rol `sgd_app` y las extensiones (`docs/PRODUCTION.md`, sección 6.0).
+Instalación nueva: Postgres crea el rol `sgd_app` y las extensiones al arrancar por primera vez (`docs/PRODUCTION.md`, sección 6.0).
 Luego, solo esta vez, con seeders:
 
 ```bash

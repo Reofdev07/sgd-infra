@@ -12,8 +12,15 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-sgd}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD en sgd-infra/.env}
       POSTGRES_DB: ${POSTGRES_DB:-sgd}
+      # Solo los lee el script de inicio (instalación nueva): el rol de la app, sin superusuario.
+      SGD_APP_USER: ${DB_USERNAME:-sgd_app}
+      SGD_APP_PASSWORD: ${DB_PASSWORD:?Defina DB_PASSWORD (rol sgd_app) en sgd-infra/.env}
     volumes:
       - pg_data:/var/lib/postgresql/data
+    configs:
+      # Corre solo la primera vez (volumen vacío): crea sgd_app, le da la base y activa las extensiones.
+      - source: pg_init_sgd_app
+        target: /docker-entrypoint-initdb.d/00-sgd-app.sh
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
@@ -422,3 +429,20 @@ volumes:
 networks:
   sgd-network:
     driver: bridge
+
+configs:
+  pg_init_sgd_app:
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      psql -v ON_ERROR_STOP=1 --username "$$POSTGRES_USER" --dbname "$$POSTGRES_DB" \
+        -v rol="$$SGD_APP_USER" -v pass="$$SGD_APP_PASSWORD" -v base="$$POSTGRES_DB" <<'SQL'
+      CREATE EXTENSION IF NOT EXISTS vector;
+      CREATE EXTENSION IF NOT EXISTS unaccent;
+      SELECT :'rol' <> current_user AS rol_propio \gset
+      \if :rol_propio
+        CREATE ROLE :"rol" LOGIN PASSWORD :'pass';
+        ALTER DATABASE :"base" OWNER TO :"rol";
+        ALTER SCHEMA public OWNER TO :"rol";
+      \endif
+      SQL

@@ -95,8 +95,8 @@ DB_USERNAME=sgd_app          # rol de la app, sin superusuario
 DB_PASSWORD=<obligatoria: contraseña de sgd_app>
 ```
 
-En una instalación nueva el rol `sgd_app` y las extensiones se crean una sola vez,
-antes de migrar (ver `docs/PRODUCTION.md`, sección 6).
+En una instalación nueva, Postgres crea el rol `sgd_app` y las extensiones la primera vez que arranca
+con el volumen vacío (ver `docs/PRODUCTION.md`, sección 6.0).
 
 ## Actualizar código
 

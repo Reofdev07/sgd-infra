@@ -62,6 +62,20 @@ for compose in docker-compose.dockploy.yml docker-compose.yml; do
     check "sin DB_PASSWORD el compose no arranca" bash -c "! '$DOCKER' compose --env-file '$DIR/sin-app.env' -f '$compose' config -q"
 done
 
+echo "Instalación nueva: el script de inicio de Postgres crea sgd_app"
+PROYECTO="prueba-init-$$"
+"$DOCKER" compose -p "$PROYECTO" --env-file "$DIR/base.env" -f docker-compose.yml up -d --no-deps postgres >/dev/null 2>&1
+for _ in $(seq 1 40); do
+    "$DOCKER" compose -p "$PROYECTO" --env-file "$DIR/base.env" -f docker-compose.yml ps postgres 2>/dev/null | grep -q '(healthy)' && break
+    sleep 2
+done
+consulta() { "$DOCKER" compose -p "$PROYECTO" --env-file "$DIR/base.env" -f docker-compose.yml exec -T postgres psql -U sgd -d sgd -At -c "$1" 2>/dev/null | tr -d '\r'; }
+check "sgd_app existe y no es superusuario" igual "$(consulta "select rolsuper from pg_roles where rolname = 'sgd_app'")" "f"
+check "la base y el esquema public son de sgd_app" igual "$(consulta "select pg_get_userbyid(d.datdba) || '/' || pg_get_userbyid(n.nspowner) from pg_database d, pg_namespace n where d.datname = 'sgd' and n.nspname = 'public'")" "sgd_app/sgd_app"
+check "extensiones vector y unaccent" igual "$(consulta "select string_agg(extname, ',' order by extname) from pg_extension where extname in ('vector','unaccent')")" "unaccent,vector"
+check "sgd_app entra con su contraseña" bash -c "'$DOCKER' compose -p '$PROYECTO' --env-file '$DIR/base.env' -f docker-compose.yml exec -T -e PGPASSWORD=clave-app postgres psql -h 127.0.0.1 -U sgd_app -d sgd -Atc 'select 1' | grep -q 1"
+"$DOCKER" compose -p "$PROYECTO" --env-file "$DIR/base.env" -f docker-compose.yml down -v >/dev/null 2>&1
+
 echo "Respaldo en modo seco"
 printf 'BACKUP_DIR=%s\n' "$PWD/$DIR" > "$DIR/b.env"
 check "usa pg_dump" igual "$(ENV_FILE="$DIR/b.env" BACKUP_DRY_RUN=1 bash scripts/backup.sh | tail -1)" "metodo=pg_dump"
