@@ -41,6 +41,7 @@ nano .env
 | `PASSPORT_CLIENT_SECRET` | El del `oauth_clients.secret` | Debe ser texto plano, **no hash** |
 | `SECRET_KEY` | `openssl rand -hex 32` | Para encriptar localStorage del frontend |
 | `POSTGRES_PASSWORD` | La que quieras (local) | Obligatoria: sin ella `docker compose` no arranca |
+| `DB_PASSWORD` | `sgd` | Obligatoria: sin ella `docker compose` no arranca. En local el override conecta la app con `sgd`/`sgd` |
 
 ### API Keys de IA (opcional en local, pero necesarias para funcionalidad completa):
 
@@ -74,7 +75,6 @@ Esto levanta estos servicios:
 | Contenedor | Puerto interno | Propósito |
 |---|---|---|
 | `postgres` | 5432 | Base de datos PostgreSQL 17 + pgvector |
-| `sgd-oracle` | 1521 | Oracle XE, solo origen del traslado (hasta la limpieza) |
 | `sgd-redis` | 6379 | Cache y sesiones |
 | `sgd-app` | 9000 | Laravel PHP-FPM |
 | `sgd-reverb` | 8080 | WebSocket server |
@@ -96,24 +96,6 @@ docker compose up -d postgres   # en WSL sin integración: docker.exe compose up
 
 Las pruebas del backend (`php artisan test`) corren en la base `sgd_test` (lo fija `phpunit.xml`).
 
-### Oracle del host (solo para probar el traslado, hasta la limpieza)
-
-Oracle Free local ya no hace falta para trabajar. Solo sirve para probar el traslado
-de datos con `php artisan db:migrate-from-oracle`. Si lo tienes en el host con usuario
-`SGD_MR7`, puerto `1522`, servicio `FREEPDB1`:
-
-- El archivo `docker-compose.override.yml` ya configura esa conexión para la app, los workers y el scheduler.
-- Verifica que tu Oracle del host tenga el usuario `SGD_MR7`.
-
-**Para desconectar Oracle del host** (usar el contenedor Oracle en su lugar, hasta la limpieza):
-
-```bash
-mv docker-compose.override.yml docker-compose.override.yml.bak
-docker compose up -d oracle-xe
-# Esperar ~2 minutos a que Oracle XE arranque
-docker compose up -d
-```
-
 ## 3. Setup de Laravel
 
 ```bash
@@ -121,7 +103,7 @@ bash scripts/deploy-laravel.sh
 ```
 
 Este script ejecuta automáticamente:
-1. Espera a que la base de la app esté lista (PostgreSQL u Oracle, según `DB_CONNECTION`)
+1. Espera a que PostgreSQL esté listo
 2. `php artisan migrate --force` — todas las migraciones (consolidadas: una por tabla)
 3. `php artisan passport:keys --force` — solo si no existen (persistencia)
 4. `php artisan passport:client --personal` — crea cliente personal si no existe
@@ -279,14 +261,6 @@ docker compose exec app php artisan passport:keys --force
 ```bash
 docker compose logs postgres
 # Verificar que el puerto 5433 esté libre (servicio local del override)
-```
-
-### Oracle no arranca (solo si pruebas el traslado, hasta la limpieza)
-**Causa:** Falta de memoria o puerto ocupado.
-**Solución:**
-```bash
-docker compose logs oracle-xe
-# Verificar que el puerto 1521/1522 esté libre
 ```
 
 ### "Class not found" en rutas

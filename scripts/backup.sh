@@ -1,6 +1,5 @@
 #!/bin/bash
-# scripts/backup.sh — Backup de la base (Postgres con pg_dump u Oracle con expdp, según DB_CONNECTION)
-#                     + storage Laravel + data OSAI
+# scripts/backup.sh — Backup de Postgres (pg_dump -Fc) + storage Laravel + data OSAI
 # Ejecutar desde sgd-infra/ vía cron
 set -e
 
@@ -38,11 +37,15 @@ echo "=== Backup SGD $(date) ==="
 echo "Usando compose file: $COMPOSE_FILE"
 
 # ============================================
-# 1. Base de datos — según DB_CONNECTION (pgsql: pg_dump; oracle: expdp)
+# 1. Base de datos — Postgres con pg_dump (formato custom, se restaura con pg_restore)
 # ============================================
-DB_ENGINE="${DB_CONNECTION:-oracle}"
-
-backup_postgres() {
+echo ""
+echo "--- Base de datos (Postgres) ---"
+if [ "${BACKUP_DRY_RUN:-0}" = "1" ]; then
+    # Modo seco (scripts/tests/postgres-scripts.test.sh): solo informa el método, no toca contenedores.
+    echo "metodo=pg_dump"
+    exit 0
+fi
 DUMPFILE="sgd_backup_${DATE}.pgdump"
 echo "Exportando con pg_dump -Fc (base ${POSTGRES_DB:-sgd})..."
 docker compose exec -T postgres pg_dump -U "${POSTGRES_USER:-sgd}" -d "${POSTGRES_DB:-sgd}" -Fc > "$BACKUP_DIR/$DUMPFILE" || {
@@ -51,84 +54,6 @@ docker compose exec -T postgres pg_dump -U "${POSTGRES_USER:-sgd}" -d "${POSTGRE
     exit 1
 }
 echo "Postgres backup: $(ls -lh "$BACKUP_DIR/$DUMPFILE" | awk '{print $5}')"
-}
-
-# Export de Oracle con expdp (data pump); se quita en la limpieza final.
-backup_oracle() {
-
-# Password del usuario SYSTEM de Oracle desde entorno (no hardcodeada)
-SYSTEM_PASSWORD="${ORACLE_SYSTEM_PASSWORD:-}"
-if [ -z "$SYSTEM_PASSWORD" ]; then
-    echo "ERROR: Falta ORACLE_SYSTEM_PASSWORD en .env (password del usuario SYSTEM de Oracle)"
-    exit 1
-fi
-
-# Obtener ruta real de DATA_PUMP_DIR (tiene sufijo aleatorio por BD)
-DP_SQL="/tmp/get_dpdir_$$.sql"
-cat > "$DP_SQL" << SQLEOF
-SET HEADING OFF FEEDBACK OFF PAGESIZE 0
-SELECT directory_path FROM dba_directories WHERE directory_name = 'DATA_PUMP_DIR';
-EXIT
-SQLEOF
-docker compose cp "$DP_SQL" oracle-xe:/tmp/get_dpdir.sql
-rm -f "$DP_SQL"
-
-DPDIR=$(docker compose exec -T oracle-xe sqlplus -S "SYSTEM/${SYSTEM_PASSWORD}@localhost/XEPDB1" @/tmp/get_dpdir.sql 2>/dev/null | grep -E '^/' | head -1 | xargs)
-docker compose exec -T --user root oracle-xe rm -f /tmp/get_dpdir.sql 2>/dev/null || true
-
-if [ -z "$DPDIR" ]; then
-    echo "ERROR: No se pudo obtener DATA_PUMP_DIR"
-    exit 1
-fi
-echo "DATA_PUMP_DIR: $DPDIR"
-
-# Auto-reparación: refrescar el directorio dedicado SGD_DUMP con el path actual
-# y garantizar permisos de SGD_MR7 (sobrevive a recreaciones del contenedor / cambios de GUID)
-FIX_SQL="/tmp/fix_sgd_dump_$$.sql"
-cat > "$FIX_SQL" << FIXEOF
-CREATE OR REPLACE DIRECTORY SGD_DUMP AS '${DPDIR}';
-GRANT READ, WRITE ON DIRECTORY SGD_DUMP TO ${DB_USERNAME:-SGD_MR7};
-EXIT
-FIXEOF
-docker compose cp "$FIX_SQL" oracle-xe:/tmp/fix_sgd_dump.sql
-docker compose exec -T oracle-xe sqlplus -S "SYSTEM/${SYSTEM_PASSWORD}@localhost/XEPDB1" @/tmp/fix_sgd_dump.sql > /dev/null 2>&1 || echo "WARN: no se pudo refrescar SGD_DUMP"
-docker compose exec -T --user root oracle-xe rm -f /tmp/fix_sgd_dump.sql 2>/dev/null || true
-rm -f "$FIX_SQL"
-
-DUMPFILE="sgd_backup_${DATE}.dmp"
-LOGFILE="sgd_backup_${DATE}.log"
-
-echo "Exportando con expdp (esquema ${DB_USERNAME:-SGD_MR7})..."
-docker compose exec -T oracle-xe expdp "\"${DB_USERNAME:-SGD_MR7}/${DB_PASSWORD:-sgd123}@localhost/XEPDB1\"" \
-    directory=SGD_DUMP dumpfile="$DUMPFILE" logfile="$LOGFILE" \
-    schemas="${DB_USERNAME:-SGD_MR7}" reuse_dumpfiles=y 2>&1 || {
-    echo "ERROR: expdp falló."
-    exit 1
-}
-
-# Copiar dump al host
-echo "Copiando dump al host..."
-docker compose cp "oracle-xe:$DPDIR/$DUMPFILE" "$BACKUP_DIR/"
-docker compose cp "oracle-xe:$DPDIR/$LOGFILE" "$BACKUP_DIR/" 2>/dev/null || true
-
-# Limpiar dentro del contenedor
-docker compose exec -T --user root oracle-xe rm -f "$DPDIR/$DUMPFILE" "$DPDIR/$LOGFILE" 2>/dev/null || true
-
-echo "Oracle backup: $(ls -lh "$BACKUP_DIR/$DUMPFILE" | awk '{print $5}')"
-}
-
-echo ""
-echo "--- Base de datos ($DB_ENGINE) ---"
-if [ "${BACKUP_DRY_RUN:-0}" = "1" ]; then
-    # Modo seco (scripts/tests/postgres-scripts.test.sh): solo informa el método, no toca contenedores.
-    if [ "$DB_ENGINE" = "pgsql" ]; then echo "metodo=pg_dump"; else echo "metodo=expdp"; fi
-    exit 0
-fi
-if [ "$DB_ENGINE" = "pgsql" ]; then
-    backup_postgres
-else
-    backup_oracle
-fi
 
 # ============================================
 # 2. Storage de Laravel (volumen real app_storage)
@@ -203,7 +128,7 @@ fi
 echo ""
 echo "--- Limpieza ---"
 DELETED=0
-for f in "$BACKUP_DIR"/*.dmp "$BACKUP_DIR"/*.pgdump "$BACKUP_DIR"/*.tar.gz "$BACKUP_DIR"/*.log; do
+for f in "$BACKUP_DIR"/*.pgdump "$BACKUP_DIR"/*.tar.gz "$BACKUP_DIR"/*.log; do
     [ -f "$f" ] || continue
     if [ $(stat -c %Y "$f") -lt $(date -d '7 days ago' +%s) ]; then
         rm -f "$f"

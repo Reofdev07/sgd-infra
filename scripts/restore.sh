@@ -22,12 +22,11 @@ Uso: bash scripts/restore.sh [opciones]
 
 Opciones:
   --target=ensayo|produccion   Destino del restore (obligatorio).
-                               'ensayo' restaura en una base aparte sin tocar prod
-                               (Postgres: base sgd_restore_test; Oracle: contenedor efímero).
+                               'ensayo' restaura en la base sgd_restore_test sin tocar prod.
                                'produccion' exige confirmación interactiva.
   --snapshot=ID                Snapshot restic a restaurar (default: latest).
   --local=DIR                  Usar backups locales de DIR en vez de restic.
-  --skip-db | --skip-oracle    No restaurar la base de datos (Postgres u Oracle, según DB_CONNECTION).
+  --skip-db                    No restaurar la base de datos.
   --skip-storage               No restaurar el storage de Laravel.
   --skip-osai                  No restaurar la data de OSAI.
   --help                       Mostrar esta ayuda.
@@ -43,7 +42,7 @@ USAGE
 TARGET=""
 SNAPSHOT="latest"
 LOCAL_DIR=""
-SKIP_ORACLE=0
+SKIP_DB=0
 SKIP_STORAGE=0
 SKIP_OSAI=0
 
@@ -52,7 +51,7 @@ for arg in "$@"; do
         --target=*) TARGET="${arg#*=}" ;;
         --snapshot=*) SNAPSHOT="${arg#*=}" ;;
         --local=*) LOCAL_DIR="${arg#*=}" ;;
-        --skip-oracle|--skip-db) SKIP_ORACLE=1 ;;
+        --skip-db) SKIP_DB=1 ;;
         --skip-storage) SKIP_STORAGE=1 ;;
         --skip-osai) SKIP_OSAI=1 ;;
         --help|-h) usage ;;
@@ -95,7 +94,6 @@ echo "Directorio temporal: $RESTORE_DIR"
 if [ -n "$LOCAL_DIR" ]; then
     echo ""
     echo "--- Usando backups locales de $LOCAL_DIR ---"
-    cp "$LOCAL_DIR"/sgd_backup_*.dmp "$RESTORE_DIR/" 2>/dev/null || true
     cp "$LOCAL_DIR"/sgd_backup_*.pgdump "$RESTORE_DIR/" 2>/dev/null || true
     cp "$LOCAL_DIR"/laravel_storage_*.tar.gz "$RESTORE_DIR/" 2>/dev/null || true
     cp "$LOCAL_DIR"/osai_data_*.tar.gz "$RESTORE_DIR/" 2>/dev/null || true
@@ -118,9 +116,7 @@ else
 fi
 
 # Encontrar los archivos más recientes
-DMP=$(ls -t "$RESTORE_DIR"/sgd_backup_*.dmp 2>/dev/null | head -1)
 PGDUMP=$(ls -t "$RESTORE_DIR"/sgd_backup_*.pgdump 2>/dev/null | head -1)
-DB_ENGINE="${DB_CONNECTION:-oracle}"
 PG_USER="${POSTGRES_USER:-sgd}"
 PG_DB="${POSTGRES_DB:-sgd}"
 PG_TEST_DB="sgd_restore_test"
@@ -130,95 +126,29 @@ OSAI_TAR=$(ls -t "$RESTORE_DIR"/osai_data_*.tar.gz 2>/dev/null | head -1)
 echo ""
 echo "Archivos encontrados:"
 [ -n "$PGDUMP" ] && echo "  Postgres dump: $(basename "$PGDUMP") ($(ls -lh "$PGDUMP" | awk '{print $5}'))" || echo "  Postgres dump: NO ENCONTRADO"
-[ -n "$DMP" ] && echo "  Oracle dump: $(basename "$DMP") ($(ls -lh "$DMP" | awk '{print $5}'))" || echo "  Oracle dump: NO ENCONTRADO"
 [ -n "$STORAGE_TAR" ] && echo "  Storage tar: $(basename "$STORAGE_TAR") ($(ls -lh "$STORAGE_TAR" | awk '{print $5}'))" || echo "  Storage tar: NO ENCONTRADO"
 [ -n "$OSAI_TAR" ] && echo "  OSAI tar: $(basename "$OSAI_TAR") ($(ls -lh "$OSAI_TAR" | awk '{print $5}'))" || echo "  OSAI tar: NO ENCONTRADO"
 
 # ============================================
-# 2. Restaurar la base de datos (Postgres u Oracle, según DB_CONNECTION)
+# 2. Restaurar la base de datos (Postgres)
 # ============================================
-if [ "$DB_ENGINE" = "pgsql" ]; then
-    if [ "$SKIP_ORACLE" -eq 0 ] && [ -n "$PGDUMP" ]; then
-        echo ""
-        echo "--- Restaurando Postgres ---"
-        if [ "$TARGET" = "ensayo" ]; then
-            PG_TARGET_DB="$PG_TEST_DB"
-            echo "Base de ensayo $PG_TARGET_DB (mismo servidor, sin tocar $PG_DB)..."
-            docker compose exec -T postgres dropdb -U "$PG_USER" --if-exists "$PG_TARGET_DB"
-            docker compose exec -T postgres createdb -U "$PG_USER" "$PG_TARGET_DB"
-            docker compose exec -T postgres pg_restore -U "$PG_USER" -d "$PG_TARGET_DB" --no-owner < "$PGDUMP" 2>&1 | tail -5 || true
-        else
-            PG_TARGET_DB="$PG_DB"
-            echo "Restaurando sobre $PG_TARGET_DB (pg_restore --clean)..."
-            docker compose exec -T postgres pg_restore -U "$PG_USER" -d "$PG_TARGET_DB" --clean --if-exists --no-owner < "$PGDUMP" 2>&1 | tail -5 || true
-        fi
-    elif [ "$SKIP_ORACLE" -eq 1 ]; then
-        echo ""
-        echo "--- Base de datos: omitida (--skip-db) ---"
-    fi
-elif [ "$SKIP_ORACLE" -eq 0 ] && [ -n "$DMP" ]; then
+if [ "$SKIP_DB" -eq 0 ] && [ -n "$PGDUMP" ]; then
     echo ""
-    echo "--- Restaurando Oracle ---"
-
-    SYSTEM_PASSWORD="${ORACLE_SYSTEM_PASSWORD:-}"
-    if [ -z "$SYSTEM_PASSWORD" ]; then
-        echo "ERROR: falta ORACLE_SYSTEM_PASSWORD en .env"
-        exit 1
-    fi
-
+    echo "--- Restaurando Postgres ---"
     if [ "$TARGET" = "ensayo" ]; then
-        echo "Levantando Oracle de ensayo (puerto 1522, sin tocar producción)..."
-        docker run -d --name sgd-restore-oracle \
-            -p 1522:1521 \
-            -e ORACLE_PASSWORD="$SYSTEM_PASSWORD" \
-            --memory=2g \
-            container-registry.oracle.com/database/express:21.3.0-xe \
-            2>&1 || true
-
-        echo "Esperando a que Oracle de ensayo esté listo (puede tomar ~2 min)..."
-        for i in $(seq 1 60); do
-            if docker exec sgd-restore-oracle sqlplus -S "SYSTEM/${SYSTEM_PASSWORD}@localhost/XEPDB1" <<< "SELECT 1 FROM DUAL; EXIT;" &>/dev/null; then
-                echo "Oracle de ensayo listo."
-                break
-            fi
-            sleep 5
-        done
-
-        ORACLE_CONTAINER="sgd-restore-oracle"
+        PG_TARGET_DB="$PG_TEST_DB"
+        echo "Base de ensayo $PG_TARGET_DB (mismo servidor, sin tocar $PG_DB)..."
+        docker compose exec -T postgres dropdb -U "$PG_USER" --if-exists "$PG_TARGET_DB"
+        docker compose exec -T postgres createdb -U "$PG_USER" "$PG_TARGET_DB"
+        docker compose exec -T postgres pg_restore -U "$PG_USER" -d "$PG_TARGET_DB" --no-owner < "$PGDUMP" 2>&1 | tail -5 || true
     else
-        ORACLE_CONTAINER=$(docker compose ps -q oracle-xe)
-        if [ -z "$ORACLE_CONTAINER" ]; then
-            echo "ERROR: contenedor oracle-xe no está corriendo."
-            exit 1
-        fi
+        PG_TARGET_DB="$PG_DB"
+        echo "Restaurando sobre $PG_TARGET_DB (pg_restore --clean)..."
+        docker compose exec -T postgres pg_restore -U "$PG_USER" -d "$PG_TARGET_DB" --clean --if-exists --no-owner < "$PGDUMP" 2>&1 | tail -5 || true
     fi
-
-    DUMPFILE=$(basename "$DMP")
-    docker cp "$DMP" "$ORACLE_CONTAINER:/tmp/$DUMPFILE"
-
-    # Obtener DATA_PUMP_DIR
-    DPDIR=$(docker exec "$ORACLE_CONTAINER" sqlplus -S "SYSTEM/${SYSTEM_PASSWORD}@localhost/XEPDB1" <<< "SET HEADING OFF FEEDBACK OFF PAGESIZE 0
-SELECT directory_path FROM dba_directories WHERE directory_name = 'DATA_PUMP_DIR';
-EXIT;" 2>/dev/null | grep -E '^/' | head -1 | xargs)
-
-    if [ -n "$DPDIR" ]; then
-        docker exec "$ORACLE_CONTAINER" cp "/tmp/$DUMPFILE" "$DPDIR/$DUMPFILE"
-        docker exec "$ORACLE_CONTAINER" rm -f "/tmp/$DUMPFILE"
-
-        echo "Ejecutando impdp (table_exists_action=replace)..."
-        docker exec "$ORACLE_CONTAINER" impdp \
-            "\"${DB_USERNAME:-SGD_MR7}/${DB_PASSWORD:-sgd123}@localhost/XEPDB1\"" \
-            directory=DATA_PUMP_DIR dumpfile="$DUMPFILE" \
-            table_exists_action=replace \
-            logfile="restore_$(date +%Y%m%d).log" 2>&1 | tail -10
-
-        docker exec "$ORACLE_CONTAINER" rm -f "$DPDIR/$DUMPFILE"
-    else
-        echo "ERROR: no se pudo obtener DATA_PUMP_DIR"
-    fi
-elif [ "$SKIP_ORACLE" -eq 1 ]; then
+elif [ "$SKIP_DB" -eq 1 ]; then
     echo ""
-    echo "--- Oracle: omitido (--skip-oracle) ---"
+    echo "--- Base de datos: omitida (--skip-db) ---"
 fi
 
 # ============================================
@@ -280,32 +210,12 @@ fi
 echo ""
 echo "--- Validación ---"
 
-if [ "$SKIP_ORACLE" -eq 0 ] && [ "$DB_ENGINE" = "pgsql" ] && [ -n "$PGDUMP" ]; then
+if [ "$SKIP_DB" -eq 0 ] && [ -n "$PGDUMP" ]; then
     echo "Conteos de tablas principales ($PG_TARGET_DB):"
     for table in documents processed_documents users; do
         count=$(docker compose exec -T postgres psql -U "$PG_USER" -d "$PG_TARGET_DB" -At -c "SELECT count(*) FROM \"$table\"" 2>/dev/null | tail -1)
         echo "  $table: ${count:-?}"
     done
-elif [ "$SKIP_ORACLE" -eq 0 ]; then
-    if [ "$TARGET" = "ensayo" ] && docker ps --filter name=sgd-restore-oracle --format '{{.Names}}' | grep -q sgd-restore-oracle; then
-        VALIDATE_CMD="docker exec sgd-restore-oracle sqlplus -S \"${DB_USERNAME:-SGD_MR7}/${DB_PASSWORD:-sgd123}@localhost/XEPDB1\""
-    else
-        VALIDATE_CMD="docker compose exec -T app php artisan tinker --execute"
-    fi
-
-    if [ "$TARGET" = "produccion" ] || ([ "$TARGET" = "ensayo" ] && docker ps --filter name=sgd-restore-oracle --format '{{.Names}}' | grep -q sgd-restore-oracle); then
-        echo "Conteos de tablas principales:"
-        for table in documents processed_documents users; do
-            if [ "$TARGET" = "ensayo" ]; then
-                count=$(docker exec sgd-restore-oracle sqlplus -S "${DB_USERNAME:-SGD_MR7}/${DB_PASSWORD:-sgd123}@localhost/XEPDB1" <<< "SET HEADING OFF FEEDBACK OFF PAGESIZE 0
-SELECT COUNT(*) FROM ${table};
-EXIT;" 2>/dev/null | grep -E '^[0-9]' | head -1 | xargs)
-            else
-                count=$(docker compose exec -T app php artisan tinker --execute="echo \\App\\Models\\$(echo $table | sed 's/s$//' | sed 's/\b\w/\U&/g')::count();" 2>/dev/null | tail -1)
-            fi
-            echo "  $table: ${count:-?}"
-        done
-    fi
 fi
 
 # ============================================
@@ -314,11 +224,7 @@ fi
 if [ "$TARGET" = "ensayo" ]; then
     echo ""
     echo "--- Limpieza ---"
-    if [ "$DB_ENGINE" = "pgsql" ]; then
-        echo "Para eliminar la base de ensayo: docker compose exec -T postgres dropdb -U $PG_USER $PG_TEST_DB"
-    elif docker ps -a --filter name=sgd-restore-oracle --format '{{.Names}}' | grep -q sgd-restore-oracle; then
-        echo "Para eliminar el Oracle de ensayo: docker rm -f sgd-restore-oracle"
-    fi
+    echo "Para eliminar la base de ensayo: docker compose exec -T postgres dropdb -U $PG_USER $PG_TEST_DB"
     echo "Para eliminar archivos temporales: rm -rf $RESTORE_DIR"
 fi
 

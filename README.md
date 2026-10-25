@@ -21,7 +21,7 @@ en un VPS con Docker Compose.
 ```bash
 # 1. Configurar .env
 cp .env.example .env
-nano .env  # rellenar con valores reales (POSTGRES_PASSWORD es obligatoria)
+nano .env  # rellenar con valores reales (POSTGRES_PASSWORD y DB_PASSWORD son obligatorias)
 
 # 2. Build del frontend
 cd ../SGD-Front
@@ -44,7 +44,6 @@ bash scripts/healthcheck.sh
 | Servicio | Contenedor | Puerto interno | Descripción |
 |---|---|---|---|
 | PostgreSQL 17 + pgvector | postgres | 5432 | Base de datos (sin puerto publicado) |
-| Oracle XE | sgd-oracle | 1521 | Base anterior, origen del traslado (hasta la limpieza) |
 | Redis | sgd-redis | 6379 | Cache + sesiones |
 | Laravel App | sgd-app | 9000 (FPM) | API principal |
 | Worker Default | sgd-worker-default | — | Cola de jobs default |
@@ -74,29 +73,30 @@ ssh -L 9001:localhost:9001 deploy@IP_DEL_VPS
 | `scripts/deploy-osai.sh` | Build y despliegue de OSAI |
 | `scripts/deploy-front.sh` | Build del frontend y reinicio de Nginx |
 | `scripts/healthcheck.sh` | Verifica que todos los servicios estén activos |
-| `scripts/backup.sh` | Backup de la base (Postgres: `pg_dump`; Oracle: expdp, hasta la limpieza) + storage |
+| `scripts/backup.sh` | Backup de la base (`pg_dump`) + storage + data de OSAI |
 | `scripts/restore.sh` | Restaura un backup (`--target=ensayo` o `--target=produccion`) |
 | `scripts/restore-rehearsal.sh` | Simulacro de restauración en una base temporal |
 
 ## Base de datos
 
 La app usa **PostgreSQL 17** con las extensiones `vector` (pgvector) y `unaccent`.
-Base y usuario: `sgd`. Qué base usa la app se decide **solo** en `sgd-infra/.env` con `DB_*`.
-Mientras el VPS no haga el cambio, sigue en Oracle XE (hasta la limpieza).
+Base `sgd`. Qué base usa la app se decide **solo** en `sgd-infra/.env` con `DB_*`.
 
 ```bash
-# En sgd-infra/.env, para usar Postgres:
+# En sgd-infra/.env:
+POSTGRES_USER=sgd            # superusuario: respaldos y administración
+POSTGRES_PASSWORD=<obligatoria>
+POSTGRES_DB=sgd
 DB_CONNECTION=pgsql
 DB_HOST=postgres
 DB_PORT=5432
 DB_DATABASE=sgd
-DB_USERNAME=sgd_app          # rol de la app, sin superusuario (se crea en el cambio)
-DB_PASSWORD=<contraseña de sgd_app>
-# Los datos de Oracle pasan a ORACLE_DB_USERNAME / ORACLE_DB_PASSWORD (origen del traslado)
+DB_USERNAME=sgd_app          # rol de la app, sin superusuario
+DB_PASSWORD=<obligatoria: contraseña de sgd_app>
 ```
 
-El traslado de datos desde Oracle se hace con `php artisan db:migrate-from-oracle`
-(ver `docs/PRODUCTION.md`).
+En una instalación nueva el rol `sgd_app` y las extensiones se crean una sola vez,
+antes de migrar (ver `docs/PRODUCTION.md`, sección 6).
 
 ## Actualizar código
 

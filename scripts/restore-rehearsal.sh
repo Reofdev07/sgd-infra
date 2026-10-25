@@ -1,11 +1,9 @@
 #!/bin/bash
 # scripts/restore-rehearsal.sh — Simulacro de restauración (SGD-094)
 #
-# Postgres (DB_CONNECTION=pgsql): restaura el dump de backup.sh en la base TEMPORAL sgd_restore_test del mismo
-# servidor, compara el conteo exacto de filas tabla por tabla con la base real y borra la temporal.
-# Oracle: importa el dump en el esquema TEMPORAL SGD_RESTORE_TEST, compara y lo borra.
-# No modifica la base de producción. Uso:
-#   bash scripts/restore-rehearsal.sh [ruta/al/sgd_backup_AAAAMMDD_HHMMSS.pgdump|.dmp]   (por defecto el más reciente)
+# Restaura el dump de backup.sh en la base TEMPORAL sgd_restore_test del mismo servidor Postgres, compara el
+# conteo exacto de filas tabla por tabla con la base real y borra la temporal. No modifica la base de producción.
+# Uso: bash scripts/restore-rehearsal.sh [ruta/al/sgd_backup_AAAAMMDD_HHMMSS.pgdump]   (por defecto el más reciente)
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -20,147 +18,41 @@ export COMPOSE_FILE
 
 BACKUP_DIR="${BACKUP_DIR:-/home/deploy/backups}"
 
-if [ "${DB_CONNECTION:-oracle}" = "pgsql" ]; then
-    PG_USER="${POSTGRES_USER:-sgd}"
-    PG_DB="${POSTGRES_DB:-sgd}"
-    # Nombre fijo: es la ÚNICA base que este script crea y borra.
-    TEST_DB="sgd_restore_test"
-    [ "$PG_DB" != "$TEST_DB" ] || { echo "ERROR: la base de origen no puede ser $TEST_DB"; exit 1; }
-    DUMP_PATH="${1:-$(ls -1t "$BACKUP_DIR"/sgd_backup_*.pgdump | head -1)}"
-    [ -f "$DUMP_PATH" ] || { echo "ERROR: no existe $DUMP_PATH"; exit 1; }
-
-    psql_at() { docker compose exec -T postgres psql -U "$PG_USER" -d "$1" -At -v ON_ERROR_STOP=1 -c "$2"; }
-    # Filas exactas por tabla del esquema public: «tabla|filas».
-    conteos() {
-        psql_at "$1" "SELECT table_name || '|' || (xpath('/row/c/text()', query_to_xml(format('SELECT count(*) AS c FROM public.%I', table_name), false, true, '')))[1]::text
-                      FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE' ORDER BY 1"
-    }
-
-    echo "=== Simulacro de restauración $(date) ==="
-    echo "Dump: $(basename "$DUMP_PATH") ($(du -h "$DUMP_PATH" | cut -f1)) → base temporal $TEST_DB"
-    trap 'echo "--- Limpieza ---"; docker compose exec -T postgres dropdb -U "$PG_USER" --if-exists "$TEST_DB" && echo "Base $TEST_DB eliminada"' EXIT
-
-    docker compose exec -T postgres dropdb -U "$PG_USER" --if-exists "$TEST_DB"
-    docker compose exec -T postgres createdb -U "$PG_USER" "$TEST_DB"
-    echo "--- pg_restore ---"
-    START=$(date +%s)
-    docker compose exec -T postgres pg_restore -U "$PG_USER" -d "$TEST_DB" --no-owner < "$DUMP_PATH" 2>&1 | tail -5 || true
-    echo "pg_restore terminó en $(( $(date +%s) - START )) s"
-
-    echo "--- Comparación de filas (exacta, tabla por tabla) ---"
-    PROD=$(mktemp); REST=$(mktemp)
-    conteos "$PG_DB" > "$PROD"
-    conteos "$TEST_DB" > "$REST"
-    awk -F'|' 'NR == FNR { r[$1] = $2; next }
-        { total_src += $2
-          if (!($1 in r)) { faltan++; print "FALTA  " $1 " (" $2 " filas en producción)"; next }
-          total_dst += r[$1]
-          if (r[$1] == $2) iguales++; else { distintas++; print "DIFIERE " $1 ": producción=" $2 " restaurado=" r[$1] } }
-        END { printf "RESUMEN tablas_iguales=%d tablas_distintas=%d tablas_faltantes=%d filas_produccion=%d filas_restauradas=%d\n", iguales, distintas, faltan, total_src, total_dst }' "$REST" "$PROD"
-    rm -f "$PROD" "$REST"
-    echo "(Diferencias pequeñas en tablas con actividad desde la hora del dump son esperables.)"
-    exit 0
-fi
-
-SOURCE_SCHEMA="${DB_USERNAME:-SGD_MR7}"
-# Nombre fijo: es el ÚNICO esquema que este script crea y borra.
-TEST_SCHEMA="SGD_RESTORE_TEST"
-if [ "${SOURCE_SCHEMA^^}" = "$TEST_SCHEMA" ]; then
-    echo "ERROR: el esquema de origen no puede ser $TEST_SCHEMA"; exit 1
-fi
-
-BACKUP_DIR="${BACKUP_DIR:-/home/deploy/backups}"
-DUMP_PATH="${1:-$(ls -1t "$BACKUP_DIR"/sgd_backup_*.dmp | head -1)}"
-DUMP_FILE="$(basename "$DUMP_PATH")"
+PG_USER="${POSTGRES_USER:-sgd}"
+PG_DB="${POSTGRES_DB:-sgd}"
+# Nombre fijo: es la ÚNICA base que este script crea y borra.
+TEST_DB="sgd_restore_test"
+[ "$PG_DB" != "$TEST_DB" ] || { echo "ERROR: la base de origen no puede ser $TEST_DB"; exit 1; }
+DUMP_PATH="${1:-$(ls -1t "$BACKUP_DIR"/sgd_backup_*.pgdump | head -1)}"
 [ -f "$DUMP_PATH" ] || { echo "ERROR: no existe $DUMP_PATH"; exit 1; }
 
-: "${ORACLE_SYSTEM_PASSWORD:?Falta ORACLE_SYSTEM_PASSWORD en .env}"
-CONNECT="SYSTEM/${ORACLE_SYSTEM_PASSWORD}@localhost/XEPDB1"
-
-# Ejecuta SQL como SYSTEM (el script SQL viaja por archivo, la contraseña nunca se imprime).
-run_sql() {
-    local tmp; tmp=$(mktemp)
-    { echo "SET HEADING OFF FEEDBACK OFF PAGESIZE 0 LINESIZE 300 SERVEROUTPUT ON"; echo "WHENEVER SQLERROR EXIT FAILURE"; cat; echo "EXIT"; } > "$tmp"
-    chmod 644 "$tmp"  # mktemp crea 600 y el usuario oracle del contenedor no podría leerlo
-    docker compose cp "$tmp" oracle-xe:/tmp/rehearsal.sql >/dev/null 2>&1
-    rm -f "$tmp"
-    docker compose exec -T oracle-xe sqlplus -S "$CONNECT" @/tmp/rehearsal.sql
-}
-
-drop_test_schema() {
-    run_sql <<SQL
-DECLARE n NUMBER;
-BEGIN
-  SELECT COUNT(*) INTO n FROM dba_users WHERE username = '${TEST_SCHEMA}';
-  IF n > 0 THEN EXECUTE IMMEDIATE 'DROP USER ${TEST_SCHEMA} CASCADE'; END IF;
-END;
-/
-SQL
+psql_at() { docker compose exec -T postgres psql -U "$PG_USER" -d "$1" -At -v ON_ERROR_STOP=1 -c "$2"; }
+# Filas exactas por tabla del esquema public: «tabla|filas».
+conteos() {
+    psql_at "$1" "SELECT table_name || '|' || (xpath('/row/c/text()', query_to_xml(format('SELECT count(*) AS c FROM public.%I', table_name), false, true, '')))[1]::text
+                  FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE' ORDER BY 1"
 }
 
 echo "=== Simulacro de restauración $(date) ==="
-echo "Dump: $DUMP_FILE ($(du -h "$DUMP_PATH" | cut -f1)) → esquema temporal $TEST_SCHEMA"
+echo "Dump: $(basename "$DUMP_PATH") ($(du -h "$DUMP_PATH" | cut -f1)) → base temporal $TEST_DB"
+trap 'echo "--- Limpieza ---"; docker compose exec -T postgres dropdb -U "$PG_USER" --if-exists "$TEST_DB" && echo "Base $TEST_DB eliminada"' EXIT
 
-DPDIR=$(run_sql <<'SQL' | grep -E '^/' | head -1 | xargs
-SELECT directory_path FROM dba_directories WHERE directory_name = 'SGD_DUMP';
-SQL
-) || true
-[ -n "$DPDIR" ] || { echo "ERROR: no se pudo leer el directorio SGD_DUMP (¿existe? correr backup.sh una vez)"; exit 1; }
-
-cleanup() {
-    echo "--- Limpieza ---"
-    drop_test_schema >/dev/null && echo "Esquema $TEST_SCHEMA eliminado"
-    docker compose exec -T --user root oracle-xe rm -f "$DPDIR/$DUMP_FILE" "$DPDIR/rehearsal_import.log" /tmp/rehearsal.sql 2>/dev/null || true
-}
-trap cleanup EXIT
-
-drop_test_schema >/dev/null
-TABLESPACE=$(run_sql <<SQL | xargs
-SELECT default_tablespace FROM dba_users WHERE username = '${SOURCE_SCHEMA}';
-SQL
-)
-TEST_PASSWORD="R$(openssl rand -hex 12)"
-run_sql >/dev/null <<SQL
-CREATE USER ${TEST_SCHEMA} IDENTIFIED BY "${TEST_PASSWORD}" DEFAULT TABLESPACE ${TABLESPACE} QUOTA UNLIMITED ON ${TABLESPACE} ACCOUNT LOCK;
-SQL
-unset TEST_PASSWORD
-echo "Esquema temporal creado (bloqueado, tablespace $TABLESPACE)"
-
-docker compose cp "$DUMP_PATH" "oracle-xe:$DPDIR/$DUMP_FILE" >/dev/null
-docker compose exec -T --user root oracle-xe chown oracle:oinstall "$DPDIR/$DUMP_FILE" 2>/dev/null || true
-
-echo "--- impdp ---"
+docker compose exec -T postgres dropdb -U "$PG_USER" --if-exists "$TEST_DB"
+docker compose exec -T postgres createdb -U "$PG_USER" "$TEST_DB"
+echo "--- pg_restore ---"
 START=$(date +%s)
-# EXCLUDE=USER: el usuario ya existe bloqueado (no copiar la contraseña de producción). JOB: no programar jobs.
-docker compose exec -T oracle-xe impdp "\"${CONNECT}\"" \
-    directory=SGD_DUMP dumpfile="$DUMP_FILE" logfile=rehearsal_import.log \
-    schemas="$SOURCE_SCHEMA" remap_schema="${SOURCE_SCHEMA}:${TEST_SCHEMA}" \
-    exclude=USER,JOB 2>&1 | grep -E "^(ORA-|Job |Processing object type SCHEMA_EXPORT/TABLE/TABLE_DATA)" | grep -v "ORA-31684" || true
-echo "impdp terminó en $(( $(date +%s) - START )) s"
+docker compose exec -T postgres pg_restore -U "$PG_USER" -d "$TEST_DB" --no-owner < "$DUMP_PATH" 2>&1 | tail -5 || true
+echo "pg_restore terminó en $(( $(date +%s) - START )) s"
 
 echo "--- Comparación de filas (exacta, tabla por tabla) ---"
-run_sql <<SQL
-DECLARE
-  src NUMBER; dst NUMBER; tables_ok NUMBER := 0; tables_diff NUMBER := 0; missing NUMBER := 0;
-  total_src NUMBER := 0; total_dst NUMBER := 0;
-BEGIN
-  FOR t IN (SELECT table_name FROM dba_tables WHERE owner = '${SOURCE_SCHEMA}' AND nested = 'NO' AND temporary = 'N'
-            AND table_name NOT LIKE 'SYS_EXPORT%' AND table_name NOT LIKE 'BIN$%' ORDER BY table_name) LOOP
-    EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM "${SOURCE_SCHEMA}"."' || t.table_name || '"' INTO src;
-    BEGIN
-      EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM "${TEST_SCHEMA}"."' || t.table_name || '"' INTO dst;
-    EXCEPTION WHEN OTHERS THEN
-      missing := missing + 1; DBMS_OUTPUT.PUT_LINE('FALTA  ' || t.table_name || ' (' || src || ' filas en producción)'); CONTINUE;
-    END;
-    total_src := total_src + src; total_dst := total_dst + dst;
-    IF src = dst THEN tables_ok := tables_ok + 1;
-    ELSE tables_diff := tables_diff + 1; DBMS_OUTPUT.PUT_LINE('DIFIERE ' || t.table_name || ': producción=' || src || ' restaurado=' || dst);
-    END IF;
-  END LOOP;
-  DBMS_OUTPUT.PUT_LINE('RESUMEN tablas_iguales=' || tables_ok || ' tablas_distintas=' || tables_diff || ' tablas_faltantes=' || missing
-    || ' filas_produccion=' || total_src || ' filas_restauradas=' || total_dst);
-END;
-/
-SELECT 'OBJETOS_INVALIDOS=' || COUNT(*) FROM dba_objects WHERE owner = '${TEST_SCHEMA}' AND status = 'INVALID';
-SQL
+PROD=$(mktemp); REST=$(mktemp)
+conteos "$PG_DB" > "$PROD"
+conteos "$TEST_DB" > "$REST"
+awk -F'|' 'NR == FNR { r[$1] = $2; next }
+    { total_src += $2
+      if (!($1 in r)) { faltan++; print "FALTA  " $1 " (" $2 " filas en producción)"; next }
+      total_dst += r[$1]
+      if (r[$1] == $2) iguales++; else { distintas++; print "DIFIERE " $1 ": producción=" $2 " restaurado=" r[$1] } }
+    END { printf "RESUMEN tablas_iguales=%d tablas_distintas=%d tablas_faltantes=%d filas_produccion=%d filas_restauradas=%d\n", iguales, distintas, faltan, total_src, total_dst }' "$REST" "$PROD"
+rm -f "$PROD" "$REST"
 echo "(Diferencias pequeñas en tablas con actividad desde la hora del dump son esperables.)"

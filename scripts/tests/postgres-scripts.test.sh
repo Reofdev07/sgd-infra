@@ -1,5 +1,5 @@
 #!/bin/bash
-# Prueba de los scripts y compose para Postgres (convive con Oracle hasta la limpieza final).
+# Prueba de los scripts y compose con Postgres.
 # Uso: bash scripts/tests/postgres-scripts.test.sh   (DOCKER=docker.exe en WSL sin integración)
 set -u
 cd "$(dirname "$0")/../.."
@@ -21,12 +21,12 @@ for script in scripts/*.sh scripts/lib/*.sh; do
     check "bash -n $script" bash -n "$script"
 done
 
-base_env() { # base_env archivo DB_CONNECTION
-    cat > "$1" <<ENV
+cat > "$DIR/base.env" <<ENV
 APP_KEY=base64:prueba
 OSAI_API_TOKEN=x
 PASSPORT_CLIENT_SECRET=x
-POSTGRES_PASSWORD=clave-postgres
+POSTGRES_PASSWORD=clave-admin
+DB_PASSWORD=clave-app
 REDIS_PASSWORD=x
 REVERB_APP_ID=1
 REVERB_APP_KEY=x
@@ -36,24 +36,6 @@ B2_KEY_ID=x
 B2_APPLICATION_KEY=x
 DOMAIN=sgd.example
 ENV
-    if [ "$2" = "pgsql" ]; then
-        cat >> "$1" <<ENV
-DB_CONNECTION=pgsql
-DB_HOST=postgres
-DB_PORT=5432
-DB_DATABASE=sgd
-DB_USERNAME=sgd
-DB_PASSWORD=clave-postgres
-ORACLE_DB_USERNAME=SGD_MR7
-ORACLE_DB_PASSWORD=clave-oracle
-ENV
-    else
-        cat >> "$1" <<ENV
-DB_USERNAME=SGD_MR7
-DB_PASSWORD=clave-oracle
-ENV
-    fi
-}
 
 # valor_env compose envfile servicio VARIABLE → valor que recibe el servicio
 valor_env() {
@@ -64,28 +46,29 @@ entorno = json.load(sys.stdin)["services"][servicio].get("environment", {})
 print(entorno.get(variable, "") if isinstance(entorno, dict) else "")' "$3" "$4"
 }
 igual() { [ "$1" = "$2" ]; }
+servicios() { "$DOCKER" compose --env-file "$2" -f "$1" config --services 2>/dev/null | sort | tr '\n' ' '; }
 
 for compose in docker-compose.dockploy.yml docker-compose.yml; do
     echo "Compose $compose"
-    base_env "$DIR/pgsql.env" pgsql
-    base_env "$DIR/oracle.env" oracle
-    check "config válido con DB_CONNECTION=pgsql" "$DOCKER" compose --env-file "$DIR/pgsql.env" -f "$compose" config -q
-    check "config válido con Oracle" "$DOCKER" compose --env-file "$DIR/oracle.env" -f "$compose" config -q
-    check "pgsql: la app usa postgres" igual "$(valor_env "$compose" "$DIR/pgsql.env" app DB_CONNECTION)/$(valor_env "$compose" "$DIR/pgsql.env" app DB_HOST)" "pgsql/postgres"
-    check "pgsql: el origen del traslado sigue en Oracle" igual "$(valor_env "$compose" "$DIR/pgsql.env" app ORACLE_DB_HOST)/$(valor_env "$compose" "$DIR/pgsql.env" app ORACLE_DB_USERNAME)" "oracle-xe/SGD_MR7"
-    check "pgsql: Oracle conserva su usuario" igual "$(valor_env "$compose" "$DIR/pgsql.env" oracle-xe APP_USER)" "SGD_MR7"
-    check "Oracle: la app sigue en oracle-xe" igual "$(valor_env "$compose" "$DIR/oracle.env" app DB_CONNECTION)/$(valor_env "$compose" "$DIR/oracle.env" app DB_HOST)" "oracle/oracle-xe"
-    check "worker-default recibe la misma base" igual "$(valor_env "$compose" "$DIR/pgsql.env" worker-default DB_HOST)" "postgres"
-    check "postgres tiene su contraseña" igual "$(valor_env "$compose" "$DIR/pgsql.env" postgres POSTGRES_PASSWORD)" "clave-postgres"
-    grep -v '^POSTGRES_PASSWORD=' "$DIR/pgsql.env" > "$DIR/sin.env"
-    check "sin POSTGRES_PASSWORD el compose no arranca" bash -c "! '$DOCKER' compose --env-file '$DIR/sin.env' -f '$compose' config -q"
+    E="$DIR/base.env"
+    check "config válido" "$DOCKER" compose --env-file "$E" -f "$compose" config -q
+    check "sin servicio oracle-xe" bash -c "! grep -qi oracle '$compose'"
+    check "la app usa postgres por defecto" igual "$(valor_env "$compose" "$E" app DB_CONNECTION)/$(valor_env "$compose" "$E" app DB_HOST)/$(valor_env "$compose" "$E" app DB_USERNAME)" "pgsql/postgres/sgd_app"
+    check "worker-default recibe la misma base" igual "$(valor_env "$compose" "$E" worker-default DB_HOST)" "postgres"
+    check "postgres tiene su contraseña de administración" igual "$(valor_env "$compose" "$E" postgres POSTGRES_PASSWORD)" "clave-admin"
+    grep -v '^POSTGRES_PASSWORD=' "$E" > "$DIR/sin-admin.env"
+    check "sin POSTGRES_PASSWORD el compose no arranca" bash -c "! '$DOCKER' compose --env-file '$DIR/sin-admin.env' -f '$compose' config -q"
+    grep -v '^DB_PASSWORD=' "$E" > "$DIR/sin-app.env"
+    check "sin DB_PASSWORD el compose no arranca" bash -c "! '$DOCKER' compose --env-file '$DIR/sin-app.env' -f '$compose' config -q"
 done
 
 echo "Respaldo en modo seco"
-printf 'DB_CONNECTION=pgsql\nBACKUP_DIR=%s\n' "$PWD/$DIR" > "$DIR/b-pg.env"
-printf 'DB_CONNECTION=oracle\nBACKUP_DIR=%s\n' "$PWD/$DIR" > "$DIR/b-ora.env"
-check "pgsql usa pg_dump" igual "$(ENV_FILE="$DIR/b-pg.env" BACKUP_DRY_RUN=1 bash scripts/backup.sh | tail -1)" "metodo=pg_dump"
-check "Oracle usa expdp" igual "$(ENV_FILE="$DIR/b-ora.env" BACKUP_DRY_RUN=1 bash scripts/backup.sh | tail -1)" "metodo=expdp"
+printf 'BACKUP_DIR=%s\n' "$PWD/$DIR" > "$DIR/b.env"
+check "usa pg_dump" igual "$(ENV_FILE="$DIR/b.env" BACKUP_DRY_RUN=1 bash scripts/backup.sh | tail -1)" "metodo=pg_dump"
+
+echo "Sin Oracle en los scripts"
+check "ningún script menciona Oracle" bash -c "! grep -rliE 'oracle|expdp|impdp|sqlplus|oci_connect' scripts/*.sh scripts/lib/*.sh"
+check "el Dockerfile no instala oci8" bash -c "! grep -qiE 'oci8|oracle' php/Dockerfile"
 
 echo ""
 [ "$FAILS" -eq 0 ] && echo "Todo bien." || echo "$FAILS fallas."

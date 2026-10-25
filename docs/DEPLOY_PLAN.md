@@ -15,8 +15,8 @@ Internet → Traefik (puertos 80/443 del host, SSL automático)
      PostgreSQL 17 + pgvector
 ```
 
-> La base pasa de Oracle XE a PostgreSQL. Mientras el VPS no haga el cambio, Oracle XE sigue
-> activo (hasta la limpieza). El traslado de datos está en `docs/PRODUCTION.md` (sección 6b).
+> La base es PostgreSQL 17 + pgvector. La nota sobre el traslado desde la base anterior está en
+> `docs/PRODUCTION.md` (sección 6b).
 
 Con Dockploy:
 - **Traefik** maneja SSL (Let's Encrypt automático, renovación automática)
@@ -128,10 +128,10 @@ Crear `docker-compose.dockploy.yml` con estos cambios respecto al original:
 ### 6.1 — Quitar `container_name` de TODOS los servicios
 
 ```
-oracle-xe, redis, app, worker-default, worker-pqrsd, scheduler, reverb, osai, nginx
+redis, app, worker-default, worker-pqrsd, scheduler, reverb, osai, nginx
 ```
 
-(Lista histórica de ese momento. Hoy el compose también trae `postgres`, y `oracle-xe` queda hasta la limpieza.)
+(Lista histórica de ese momento. Hoy el compose también trae `postgres`.)
 
 Dockploy no permite `container_name`.
 
@@ -187,9 +187,9 @@ nano .env
 | Variable | Cómo generar |
 |---|---|
 | `DOMAIN` | `demo.aviliontech.com` |
-| `POSTGRES_PASSWORD` | Inventar una segura (obligatoria; `DB_PASSWORD` lleva la misma) |
-| `DB_CONNECTION` y demás `DB_*` | `pgsql`, `postgres`, `5432`, `sgd`, `sgd` (ver `docs/PRODUCTION.md` 3.3) |
-| `ORACLE_PASSWORD` | Inventar una segura (Oracle, hasta la limpieza) |
+| `POSTGRES_PASSWORD` | `openssl rand -hex 24` (obligatoria; superusuario `sgd`) |
+| `DB_PASSWORD` | `openssl rand -hex 24` (obligatoria; contraseña del rol `sgd_app`, distinta) |
+| `DB_CONNECTION` y demás `DB_*` | `pgsql`, `postgres`, `5432`, `sgd`, `sgd_app` (ver `docs/PRODUCTION.md` 3.3) |
 | `APP_KEY` | `docker compose run --rm app php artisan key:generate --show` |
 | `OSAI_API_TOKEN` | `openssl rand -hex 32` |
 | `REVERB_APP_ID` | `240902` (de seeders, no cambiar) |
@@ -218,7 +218,7 @@ mv docker-compose.override.yml docker-compose.override.yml.bak
 
 ```bash
 cd /home/deploy/sgd-infra
-docker compose build app    # PHP+OCI8 (~15-20 min)
+docker compose build app    # PHP + pdo_pgsql
 docker compose build osai   # FastAPI (~10 min)
 ```
 
@@ -237,10 +237,15 @@ docker compose build osai   # FastAPI (~10 min)
 
 ## Fase 10 — Setup Laravel (hago yo)
 
+Instalación nueva: primero crear el rol `sgd_app` y las extensiones (`docs/PRODUCTION.md`, sección 6.0).
+Luego, solo esta vez, con seeders:
+
 ```bash
 cd /home/deploy/sgd-infra
-bash scripts/deploy-laravel.sh
+SEED=true bash scripts/deploy-laravel.sh
 ```
+
+Los despliegues siguientes: `bash scripts/deploy-laravel.sh` (sin seeders).
 
 Luego obtener Passport client:
 ```bash
@@ -288,7 +293,7 @@ sudo crontab -e
 0 2 * * * cd /home/deploy/sgd-infra && bash scripts/backup.sh >> /home/deploy/backups/backup.log 2>&1
 ```
 
-Backups diarios de la base (PostgreSQL con `pg_dump`; Oracle con expdp hasta la limpieza), storage Laravel, data OSAI (retención 7 días).
+Backups diarios de la base (PostgreSQL con `pg_dump`), storage Laravel, data OSAI (retención 7 días).
 
 ---
 

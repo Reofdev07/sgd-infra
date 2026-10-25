@@ -31,12 +31,9 @@ Defaults actuales pensados para un **Contabo Cloud VPS M (8GB RAM, 4 vCPU)**.
 | `WORKER_PQRSD_REPLICAS`   | 1                  | 2          | 3          |
 | `WORKER_DEFAULT_REPLICAS` | 1                  | 1          | 2          |
 | `MEM_LIMIT_POSTGRES`      | 1g                 | por medir  | por medir  |
-| `MEM_LIMIT_ORACLE` (hasta la limpieza) | 3g      | 3g         | 4g         |
 
 > Con **1 municipio** (30-60 usuarios concurrentes) los defaults de 8GB son
-> suficientes. Mientras `postgres` y `oracle-xe` convivan (hasta la limpieza), sus
-> límites se suman en la RAM del VPS (7,8 GB): 1g de Postgres + 2560m–3g de Oracle.
-> Tras la limpieza final se libera la memoria de Oracle.
+> suficientes.
 > La matriz superior es para cuando un municipio grande (o varios
 > procesos simultáneos de IA) lo exija.
 
@@ -63,13 +60,12 @@ Defaults actuales pensados para un **Contabo Cloud VPS M (8GB RAM, 4 vCPU)**.
 | Componente | Techo | Consecuencia al alcanzarlo |
 |---|---|---|
 | PostgreSQL 17 | Sin tope de datos ni de CPU por licencia; manda `MEM_LIMIT_POSTGRES` y el disco | Consultas lentas si le falta RAM; alerta de `DB_SIZE_ALERT_GB` |
-| Oracle XE 21c (hasta la limpieza) | 2 vCPU, 2GB SGA, 2GB PGA, **12GB de datos** | Congestión de SGA/PGA; se llena la BD |
 | PHP-FPM pool | `pm.max_children` | Si se satura → timeouts 502/504 |
 | OSAI uvicorn | `--workers` + semáforo `MAX_CONCURRENT_DOCS=5` | Backlog de análisis IA |
 | Reverb | 1 proceso, `scaling.enabled=false` | Saturación de WebSockets con muchos usuarios |
 
-**Conclusión:** con PostgreSQL desaparece el techo de 12GB / 2 vCPU que imponía
-Oracle XE. El límite pasa a ser la RAM y el disco del VPS. Si un municipio los
+**Conclusión:** PostgreSQL no tiene techo de datos ni de CPU por licencia.
+El límite es la RAM y el disco del VPS. Si un municipio los
 supera, subir de VPS (Sección 7) o levantar una instancia adicional.
 
 ## 5. Runbook: qué verificar ante degradación en horas pico
@@ -94,8 +90,6 @@ docker compose exec -T redis redis-cli info keyspace          # DBSIZE de sesion
 # 4. ¿Base de datos lenta o llena?
 docker compose exec -T postgres pg_isready -U sgd -d sgd
 docker compose exec -T -u www-data -e HOME=/tmp app php artisan db:size   # db_size: N GB
-# Oracle (hasta la limpieza):
-# docker compose exec -T oracle-xe sh -c 'echo "SELECT 1 FROM DUAL;" | sqlplus -S SGD_MR7/sgd123@localhost/XEPDB1'
 
 # 5. ¿OSAI colapsado?
 docker compose logs --tail=50 osai
@@ -110,13 +104,13 @@ docker compose logs --tail=50 osai
 ## 6. ADR — Decisiones registradas
 
 ### ADR-01: Colas y sesiones en Redis (no en la base de datos)
-- **Contexto (histórico, con Oracle):** producción usaba `QUEUE_CONNECTION=database` y
-  `SESSION_DRIVER=database` → cada request y cada poll de job golpeaba Oracle.
+- **Contexto (histórico):** producción usaba `QUEUE_CONNECTION=database` y
+  `SESSION_DRIVER=database` → cada request y cada poll de job golpeaba la base.
 - **Decisión:** `QUEUE_CONNECTION=redis`, `SESSION_DRIVER=redis`,
   `CACHE_DRIVER=redis` (Redis ya estaba corriendo).
-- **Por qué:** quita carga transaccional de Oracle, polling instantáneo
-  (`--sleep=1`), y colas/sesiones no compiten por los 2GB de SGA de Oracle XE.
-  La regla sigue igual con PostgreSQL: colas y sesiones nunca en la base.
+- **Por qué:** quita carga transaccional de la base, polling instantáneo
+  (`--sleep=1`), y colas/sesiones no compiten por la memoria de la base.
+  Regla: colas y sesiones nunca en la base.
 
 ### ADR-02: `retry_after` > timeout de los jobs de IA
 - **Contexto:** `retry_after=90` < `timeout=180` de `ProcessDocumentJob` y el
@@ -182,21 +176,14 @@ CREATE INDEX idx_documents_dep_status ON documents(dependency_id, current_status
 CREATE INDEX idx_document_tasks_due ON document_tasks(due_date, status);
 ```
 
-## 9. Migración de Oracle XE a PostgreSQL
+## 9. Base de datos: PostgreSQL 17 + pgvector
 
-La migración ya está hecha en el código (PostgreSQL 17 + pgvector); el VPS
-sigue en Oracle hasta hacer el cambio. Se hizo como
-proyecto separado, no como ajuste de rendimiento. Motivos de entonces: el techo
-duro de Oracle XE (12GB de datos / 2 vCPU) y su consumo de RAM.
-
-- **Memoria:** Postgres arranca con `MEM_LIMIT_POSTGRES=1g` (Oracle usaba 2560m–3g).
-  Mientras convivan (hasta la limpieza), se suman en la RAM del VPS.
-- **Traslado de datos:** `php artisan db:migrate-from-oracle` (ver
-  `docs/PRODUCTION.md`, sección 6b).
-- **Trampas de Oracle que ya no aplican:** `limit()` ignorado dentro de las
-  precargas, ORA-00942 en reglas `exists`, el tope de 12GB de XE y las columnas
-  VARCHAR2 medidas en bytes (Postgres mide caracteres; la regla `MaxBytes` se
-  conserva y es más estricta).
+- **Memoria:** Postgres arranca con `MEM_LIMIT_POSTGRES=1g`.
+- **Tamaño:** `healthcheck.sh` marca FAIL si la base pasa de `DB_SIZE_ALERT_GB` (20).
+- **Esquema:** los `varchar` se miden en caracteres; la regla `MaxBytes` (bytes) se
+  conserva y es más estricta.
+- **Historia:** el traslado desde la base anterior está en `docs/PRODUCTION.md`,
+  sección 6b (nota histórica).
 - **Trabajo futuro:** ajustar parámetros de Postgres (memoria compartida, memoria
   por consulta, conexiones) según mediciones reales en producción. Aún no hay
   valores medidos: no cambiarlos a ciegas.

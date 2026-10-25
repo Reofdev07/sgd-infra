@@ -14,15 +14,12 @@ fi
 export COMPOSE_FILE
 echo "Usando compose file: $COMPOSE_FILE"
 
-# Esperar a que la base de la app (DB_CONNECTION del contenedor: pgsql u oracle) acepte conexiones
+# Esperar a que Postgres acepte conexiones con el usuario de la app
 echo "Esperando a la base de datos..."
 until docker compose exec -T app php -r '
     try {
-        if (getenv("DB_CONNECTION") === "pgsql") {
-            new PDO("pgsql:host=".getenv("DB_HOST").";port=".getenv("DB_PORT").";dbname=".getenv("DB_DATABASE"), getenv("DB_USERNAME"), getenv("DB_PASSWORD"));
-            exit(0);
-        }
-        exit(oci_connect(getenv("DB_USERNAME"), getenv("DB_PASSWORD"), getenv("DB_HOST").":".getenv("DB_PORT")."/".getenv("DB_DATABASE")) ? 0 : 1);
+        new PDO("pgsql:host=".getenv("DB_HOST").";port=".getenv("DB_PORT").";dbname=".getenv("DB_DATABASE"), getenv("DB_USERNAME"), getenv("DB_PASSWORD"));
+        exit(0);
     } catch (Throwable $e) {
         exit(1);
     }' &>/dev/null; do

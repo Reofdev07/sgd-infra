@@ -79,7 +79,7 @@ nano .env
 
 ### 3.2 Deshabilitar override local
 
-**IMPORTANTE:** El archivo `docker-compose.override.yml` tiene configuraciones para desarrollo local (`APP_DEBUG=true`, `APP_ENV=local`, Postgres local en el puerto 5433, Oracle del host). En producción debe estar deshabilitado:
+**IMPORTANTE:** El archivo `docker-compose.override.yml` tiene configuraciones para desarrollo local (`APP_DEBUG=true`, `APP_ENV=local`, Postgres local en el puerto 5433). En producción debe estar deshabilitado:
 
 ```bash
 mv docker-compose.override.yml docker-compose.override.yml.bak
@@ -104,8 +104,7 @@ Debe ser el dominio real que apunte al VPS. Controla:
 #### Base de datos (PostgreSQL)
 
 La app usa **PostgreSQL 17** (imagen `pgvector/pgvector:pg17`, extensiones `vector` y `unaccent`).
-Qué base usa la app se decide **solo** aquí, con las variables `DB_*`. Si no se cambian, la app
-sigue en Oracle XE (hasta la limpieza).
+Qué base usa la app se decide **solo** aquí, con las variables `DB_*`.
 
 ```
 POSTGRES_PASSWORD=...        # obligatoria: sin ella docker compose no arranca
@@ -117,38 +116,17 @@ DB_CONNECTION=pgsql
 DB_HOST=postgres
 DB_PORT=5432
 DB_DATABASE=sgd
-DB_USERNAME=sgd_app          # rol de la app, sin superusuario (ver 6b)
-DB_PASSWORD=...              # contraseña de sgd_app
+DB_USERNAME=sgd_app          # rol de la app, sin superusuario (ver 6.0)
+DB_PASSWORD=...              # obligatoria: contraseña de sgd_app
 ```
 
-- `POSTGRES_PASSWORD`: contraseña del superusuario `sgd` (traslado, respaldos, administración). **Usa una segura.**
-- `DB_USERNAME` / `DB_PASSWORD`: rol `sgd_app` de la app, sin superusuario (se crea en 6b, paso 8).
+- `POSTGRES_PASSWORD`: contraseña del superusuario `sgd` (respaldos y administración). **Usa una segura.**
+- `DB_USERNAME` / `DB_PASSWORD`: rol `sgd_app` de la app, sin superusuario. Se crea una vez en la
+  instalación nueva (sección 6.0). Sin `DB_PASSWORD` docker compose no arranca.
 - `POSTGRES_USER` / `POSTGRES_DB`: usuario y base (por defecto `sgd`).
 - `DB_SIZE_ALERT_GB`: tamaño de la base desde el que `healthcheck.sh` marca FAIL (por defecto 20).
 - El servicio `postgres` no publica puertos: solo lo ve la red interna de Docker.
 - La conexión usa `timezone=America/Bogota`; las fechas se guardan como `timestamp` sin zona.
-
-#### Oracle XE (hasta la limpieza)
-
-Oracle sigue en el compose solo como **origen del traslado** de datos. Se quita en la limpieza final.
-
-```
-ORACLE_PASSWORD=StrongPassword123!
-ORACLE_DB_USERNAME=SGD_MR7
-ORACLE_DB_PASSWORD=sgd123
-```
-
-- `ORACLE_PASSWORD`: Contraseña del usuario `SYS` y `SYSTEM` en Oracle. **Cámbiala por una segura.**
-- `ORACLE_DB_USERNAME` / `ORACLE_DB_PASSWORD`: usuario y contraseña de la app en Oracle. Mientras la app
-  siga en Oracle (`DB_CONNECTION=oracle`), estos datos van en `DB_USERNAME` / `DB_PASSWORD`; al pasar a
-  Postgres se mueven a `ORACLE_DB_*`.
-
-**Para cambiar el password del usuario SGD_MR7 después del primer arranque (hasta la limpieza):**
-
-```bash
-docker compose exec oracle-xe sqlplus SYS/$ORACLE_PASSWORD@XEPDB1 as sysdba
-# ALTER USER SGD_MR7 IDENTIFIED BY nuevo_password;
-```
 
 #### Laravel APP_KEY
 
@@ -376,6 +354,8 @@ Este script:
 
 ## 5. Levantar todos los servicios
 
+En una instalación nueva, sigue primero la sección 6.0 (crea el rol de la app antes de migrar).
+
 ```bash
 cd /home/deploy/sgd-infra
 docker compose up -d
@@ -391,6 +371,33 @@ Todos deben mostrar `Up` o `healthy`.
 
 ## 6. Setup de Laravel
 
+### 6.0 Instalación nueva: rol de la app y extensiones (una sola vez)
+
+Solo en una instalación nueva, con la base vacía. Se hace **antes** de la primera migración.
+Variables: `C="docker compose -f docker-compose.dockploy.yml"` (desde `/home/deploy/sgd-infra`).
+
+1. Levantar Postgres y esperar `healthy`: `$C up -d postgres`.
+2. Crear el rol de la app (sin superusuario) y las extensiones, como superusuario. La contraseña es la
+   de `DB_PASSWORD` (leerla con `read -rs SGD_APP_PASSWORD`, nunca en el historial):
+   ```bash
+   $C exec -T postgres psql -U sgd -d sgd -v ON_ERROR_STOP=1 -v pass="$SGD_APP_PASSWORD" <<'SQL'
+   CREATE ROLE sgd_app LOGIN PASSWORD :'pass';
+   ALTER DATABASE sgd OWNER TO sgd_app;
+   ALTER SCHEMA public OWNER TO sgd_app;
+   CREATE EXTENSION IF NOT EXISTS vector;
+   CREATE EXTENSION IF NOT EXISTS unaccent;
+   SQL
+   ```
+3. Levantar el resto: `$C up -d`.
+4. Migrar y sembrar (solo esta vez): `SEED=true bash scripts/deploy-laravel.sh`.
+   Corre las 85 migraciones y los seeders: roles, permisos, pantallas, secciones, geografía, catálogos,
+   festivos, normas y el usuario `system_admin` inicial. Su contraseña está en `UserSeeder`:
+   **cámbiala al entrar**. También crea las llaves y los clientes de Passport.
+
+Los despliegues siguientes usan `bash scripts/deploy-laravel.sh`, sin seeders.
+
+### 6.1 Despliegue normal
+
 ```bash
 bash scripts/deploy-laravel.sh
 ```
@@ -398,16 +405,14 @@ bash scripts/deploy-laravel.sh
 ### Qué hace paso a paso:
 
 **Paso 1 — Esperar la base de datos:**
-El script espera hasta que la base de la app acepte conexiones (PostgreSQL u Oracle, según
-`DB_CONNECTION`). Puede tomar 1-2 minutos la primera vez.
+El script espera hasta que PostgreSQL acepte conexiones. Puede tomar 1-2 minutos la primera vez.
 
 **Paso 2 — Migraciones:**
 ```bash
 docker compose exec -T app php artisan migrate --force
 ```
 Ejecuta las migraciones pendientes. Están consolidadas: una por tabla, con su forma final; las
-llaves foráneas van en una migración al final. Las 238 migraciones viejas de Oracle quedaron archivadas
-en `database/migrations/_oracle_legacy/` (históricas, no se ejecutan). Si alguna falla, revisa los logs:
+llaves foráneas van en una migración al final. Si alguna falla, revisa los logs:
 ```bash
 docker compose logs app
 ```
@@ -450,82 +455,20 @@ docker compose exec app php artisan optimize:clear
 docker compose exec app php artisan queue:restart
 ```
 
-## 6b. Cambio de Oracle a PostgreSQL (una sola ventana de mantenimiento)
+## 6b. Nota histórica: traslado desde Oracle
 
-Se hace **una vez** por instalación. El código de la rama de Postgres **no funciona con Oracle como base
-activa** (usa SQL de Postgres), así que el código nuevo y el cambio de base van juntos, con la app en
-mantenimiento y las colas detenidas. Oracle no se toca: es el origen y la vuelta atrás.
-
-Variables: `C="docker compose -f docker-compose.dockploy.yml"` y
-`A="$C exec -T -u www-data -e HOME=/tmp app php artisan"` (todo desde `/home/deploy/sgd-infra`).
-
-**Antes de la ventana (con Oracle, sin cortar nada)**
-1. Respaldo de Oracle guardado **fuera** de `BACKUP_DIR` (la limpieza de `backup.sh` borra los `.dmp` de más
-   de 7 días): `bash scripts/backup.sh` y copiar el `.dmp` a `/home/deploy/respaldos/oracle-antes-de-postgres/`.
-2. Copia del `.env`: `cp .env .env.antes-postgres`. Anotar los commits actuales de SDG-Back-api y sgd-infra.
-
-**Ventana**
-3. Mantenimiento: `$A down --retry=60`. El portal muestra mantenimiento y los webhooks de OSAI reciben 503,
-   que OSAI reintenta (solo 400/404/409/410/422 son definitivos).
-4. Detener lo que escribe en la base: `$C stop worker-default worker-pqrsd worker-filing worker-chat scheduler reverb`.
-5. Comprobar que no queda trabajo a medias:
-   - colas vacías: `$A queue:monitor redis:default,redis:pqrsd-ai,redis:filing-ai,redis:chat-ai`;
-   - ningún documento analizándose:
-     `$A tinker --execute="echo App\Models\ProcessedDocument::whereIn('status', ['processing','queued'])->count();"` → 0.
-   Si hay trabajo pendiente, levantar los workers, esperar y repetir.
-6. Código nuevo: `git pull` (o `checkout`) de la versión con Postgres en SDG-Back-api y sgd-infra.
-7. `.env` (secretos con `read -rs`, nunca en el historial):
-   `POSTGRES_PASSWORD=<admin>`, `DB_CONNECTION=pgsql`, `DB_HOST=postgres`, `DB_PORT=5432`, `DB_DATABASE=sgd`,
-   `DB_USERNAME=sgd_app`, `DB_PASSWORD=<app>`, y los datos de Oracle en `ORACLE_DB_USERNAME` / `ORACLE_DB_PASSWORD`.
-8. Levantar Postgres: `$C up -d --no-deps postgres` (esperar `healthy`). Crear el rol de la app (sin superusuario)
-   y las extensiones, como superusuario:
-   ```bash
-   $C exec -T postgres psql -U sgd -d sgd -v ON_ERROR_STOP=1 -v pass="$SGD_APP_PASSWORD" <<'SQL'
-   CREATE ROLE sgd_app LOGIN PASSWORD :'pass';
-   ALTER DATABASE sgd OWNER TO sgd_app;
-   ALTER SCHEMA public OWNER TO sgd_app;
-   CREATE EXTENSION IF NOT EXISTS vector;
-   CREATE EXTENSION IF NOT EXISTS unaccent;
-   SQL
-   ```
-9. Recrear la app con el `.env` nuevo y **borrar la configuración cacheada** (si no, sigue apuntando a Oracle):
-   `$C up -d --no-deps --force-recreate app`, `$A config:clear`, `$A migrate --force` (sin seeders).
-10. Trasladar con la conexión de administración (superusuario, solo para esta orden):
-    ```bash
-    $C exec -T -u www-data -e HOME=/tmp -e DB_ADMIN_USERNAME=sgd -e DB_ADMIN_PASSWORD="$POSTGRES_PASSWORD" app \
-      php artisan db:migrate-from-oracle --to=pgsql_admin
-    ```
-    Debe terminar en «Traslado verificado» (código 0). Avisa cuántas fechas traían hora en columnas `date`
-    (se guarda el día; la app ya las leía como día). Si algo no cuadra: **vuelta atrás** (abajo).
-11. `bash scripts/deploy-laravel.sh` (caches, permisos, Passport ya existe por el traslado), levantar
-    `$C up -d --no-deps worker-default worker-pqrsd worker-filing worker-chat scheduler reverb` y `$A up`.
-12. `bash scripts/healthcheck.sh` → 16 OK. Probar login, un radicado de prueba (recibe el id y el número
-    siguientes al último copiado) y la consulta con código en el portal.
-
-**Vuelta atrás** (Oracle quedó intacto; lo escrito en Postgres después del cambio se pierde, aceptado en staging):
-`$A down`, detener workers/scheduler/reverb, `cp .env.antes-postgres .env`, volver SDG-Back-api y sgd-infra a
-los commits anotados en el paso 2, `$C up -d --no-deps --force-recreate app worker-default worker-pqrsd worker-filing worker-chat scheduler reverb`,
-`bash scripts/deploy-laravel.sh`, `$A up`, `bash scripts/healthcheck.sh`.
-
-Opciones del comando: `--from=oracle`, `--to=pgsql|pgsql_admin`, `--truncate` (vacía el destino y copia de
-nuevo), `--verify-only` (solo compara), `--batch=500` (no pasar de ~1000: tope de parámetros de Postgres).
-
-Qué hace `db:migrate-from-oracle`:
-- Compara los esquemas de origen y destino y **se detiene si no coinciden**.
-- Exige el destino migrado y **vacío** (o `--truncate`).
-- Copia todas las tablas menos `migrations` y `jobs`, con las llaves foráneas apagadas (por eso el superusuario).
-- Convierte 0/1 a booleano y `''` a `NULL`; las fechas se copian sin mover la hora; un valor fuera de un CHECK
-  da un error claro. Un fallo al insertar muestra tabla, lote y SQLSTATE, **nunca los valores**.
-- Ajusta las secuencias de los id y verifica filas, suma de control, llaves huérfanas y que las columnas
-  cifradas se lean con la `APP_KEY`.
+Antes la base era Oracle XE. Staging (demo.aviliontech.com) se trasladó a PostgreSQL
+el 2026-10-25 con `php artisan db:migrate-from-oracle`. Se verificó: las 82 tablas cuadran y los datos
+cifrados se leen. Ese comando ya no está en el código: quedó en la etiqueta git `traslado-oracle` de
+SDG-Back-api, por si otra instalación con Oracle lo necesita. La rama `roraima.0.0.2` quedó como respaldo
+con Oracle.
 
 Notas del esquema en Postgres:
-- Los índices únicos que en Oracle convivían con `deleted_at` ahora son **índices únicos parciales**
+- Los índices únicos que conviven con `deleted_at` son **índices únicos parciales**
   `WHERE deleted_at IS NULL` (algunos usan `NULLS NOT DISTINCT`).
 - Las columnas JSON se guardan como `text` (no `jsonb`), por las búsquedas con `LIKE`.
-- Postgres mide los `varchar` en caracteres (Oracle medía bytes). La regla `MaxBytes` se conserva:
-  es más estricta.
-- La app se conecta con `sgd_app` (sin superusuario). El superusuario (`POSTGRES_USER`) solo para el traslado,
+- Postgres mide los `varchar` en caracteres. La regla `MaxBytes` (bytes) se conserva: es más estricta.
+- La app se conecta con `sgd_app` (sin superusuario). El superusuario (`POSTGRES_USER`) es solo para
   los respaldos y la administración.
 
 ## 7. Build del frontend
@@ -614,9 +557,8 @@ Resultado: 16 OK, 0 FAIL
 Todos los servicios están saludables.
 ```
 
-El primer chequeo revisa la base activa según `DB_CONNECTION`: `PostgreSQL`, o `Oracle XE` mientras
-la app siga en Oracle (hasta la limpieza). «Tamaño de la base» usa `php artisan db:size` (en Postgres,
-`pg_database_size`; salida `db_size: N GB`) y falla si pasa de `DB_SIZE_ALERT_GB`.
+El primer chequeo revisa `PostgreSQL`. «Tamaño de la base» usa `php artisan db:size`
+(`pg_database_size`; salida `db_size: N GB`) y falla si pasa de `DB_SIZE_ALERT_GB`.
 
 ### Pruebas manuales adicionales:
 
@@ -664,18 +606,18 @@ El script `scripts/backup.sh` respalda:
 | Componente | Método | Archivo |
 |---|---|---|
 | PostgreSQL | `pg_dump -Fc` | `sgd_backup_YYYYMMDD_HHMMSS.pgdump` |
-| Oracle (hasta la limpieza) | `expdp` (data pump) | `sgd_backup_YYYYMMDD_HHMMSS.dmp` |
 | Storage Laravel | `tar.gz` | `laravel_storage_YYYYMMDD_HHMMSS.tar.gz` |
 | Data OSAI | `tar.gz` | `osai_data_YYYYMMDD_HHMMSS.tar.gz` |
 
-El script elige la base según `DB_CONNECTION` del `.env`. Modo seco (solo informa qué método usaría, sin tocar contenedores): `BACKUP_DRY_RUN=1 bash scripts/backup.sh`.
+Modo seco (solo informa el método, sin tocar contenedores): `BACKUP_DRY_RUN=1 bash scripts/backup.sh`. `ENV_FILE` permite usar otro `.env`.
 
 Los backups se guardan en `BACKUP_DIR` (configurable en `.env`, por defecto `/home/deploy/backups`). Se conservan 7 días.
 
-**Restaurar y simulacro** (con Postgres; con Oracle funcionan como antes, hasta la limpieza):
+**Restaurar y simulacro:**
 - `bash scripts/restore.sh --target=ensayo` restaura el `.pgdump` en la base `sgd_restore_test` del mismo
   servidor, sin tocar producción. `--target=produccion` restaura sobre la real con `pg_restore --clean`
-  (pide confirmación). `--skip-db` (alias `--skip-oracle`) omite la base.
+  (pide confirmación). `--skip-db`, `--skip-storage` y `--skip-osai` omiten cada parte;
+  `--local=DIR` y `--snapshot=ID` eligen de dónde sale el respaldo.
 - `bash scripts/restore-rehearsal.sh [dump]` restaura en la base temporal `sgd_restore_test`, compara
   filas tabla por tabla con la real, imprime `RESUMEN ... tablas_faltantes=N` y borra la temporal.
   Esperado: `tablas_faltantes=0`.
@@ -847,33 +789,6 @@ docker compose logs postgres
 df -h
 ```
 
-### Oracle XE no arranca (hasta la limpieza)
-
-**Síntomas:** Contenedor se reinicia en bucle, healthcheck falla.
-
-**Causas comunes:**
-- No hay suficiente memoria (mínimo 2 GB libres para Oracle)
-- Puerto 1521 ocupado por otra instancia de Oracle
-- Disco lleno
-
-**Diagnóstico:**
-```bash
-docker compose logs oracle-xe
-df -h
-free -h
-```
-
-**Solución:**
-```bash
-# Aumentar memoria del sistema (si está en límite)
-sudo fallocate -l 2G /swapfile
-sudo chmod 600 /swapfile
-sudo mkswap /swapfile
-sudo swapon /swapfile
-
-# O usar Oracle del host si está disponible
-```
-
 ### Passport keys perdidas
 
 **Síntomas:** Los tokens JWT existentes dejan de funcionar.
@@ -905,7 +820,6 @@ docker compose restart app
 | 443 | HTTPS (todo el tráfico) | Público |
 | 9001 | Portainer | Solo localhost (SSH tunnel) |
 | 5432 | PostgreSQL | Solo red interna Docker |
-| 1521 | Oracle XE (hasta la limpieza) | Solo red interna Docker |
 | 6379 | Redis | Solo red interna Docker |
 | 8080 | Reverb | Solo red interna Docker |
 | 8000 | OSAI | Solo red interna Docker |
@@ -916,7 +830,6 @@ docker compose restart app
 | Volumen | Monta en | Propósito |
 |---|---|---|
 | `pg_data` | `/var/lib/postgresql/data` | Datos de PostgreSQL |
-| `oracle_data` | `/opt/oracle/oradata` | Datos de Oracle (hasta la limpieza) |
 | `redis_data` | `/data` | Persistencia de Redis |
 | `app_storage` | `/var/www/html/storage` | Uploads, logs de Laravel |
 | `osai_data` | `/app/data` | Datos de OSAI |
