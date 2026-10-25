@@ -30,10 +30,14 @@ Defaults actuales pensados para un **Contabo Cloud VPS M (8GB RAM, 4 vCPU)**.
 | `OSAI_WORKERS`            | 1                  | 2          | 3          |
 | `WORKER_PQRSD_REPLICAS`   | 1                  | 2          | 3          |
 | `WORKER_DEFAULT_REPLICAS` | 1                  | 1          | 2          |
-| `MEM_LIMIT_ORACLE`        | 3g                 | 3g         | 4g         |
+| `MEM_LIMIT_POSTGRES`      | 1g                 | por medir  | por medir  |
+| `MEM_LIMIT_ORACLE` (hasta la limpieza) | 3g      | 3g         | 4g         |
 
 > Con **1 municipio** (30-60 usuarios concurrentes) los defaults de 8GB son
-> suficientes. La matriz superior es para cuando un municipio grande (o varios
+> suficientes. Mientras `postgres` y `oracle-xe` convivan (hasta la limpieza), sus
+> límites se suman en la RAM del VPS (7,8 GB): 1g de Postgres + 2560m–3g de Oracle.
+> Tras la limpieza final se libera la memoria de Oracle.
+> La matriz superior es para cuando un municipio grande (o varios
 > procesos simultáneos de IA) lo exija.
 
 ## 3. Tabla de variables de rendimiento
@@ -50,21 +54,23 @@ Defaults actuales pensados para un **Contabo Cloud VPS M (8GB RAM, 4 vCPU)**.
 | `OSAI_WORKERS` | 1 | Workers uvicorn de FastAPI | Ver ADR-05 |
 | `OSAI_BACKGROUND_WORKER` | true | Ejecuta cola offline + webhook retry | Solo true en 1 instancia |
 | `REDIS_MAXMEMORY` | 256mb | Máxima RAM de Redis (claves) | Ajustar a datos cacheados |
+| `MEM_LIMIT_POSTGRES` | 1g | RAM máxima de PostgreSQL | Subir si `docker stats` lo muestra al tope |
+| `DB_SIZE_ALERT_GB` | 20 | Tamaño de la base desde el que `healthcheck.sh` marca FAIL | Según el disco del VPS |
 | `MEM_LIMIT_*` | varios | RAM máxima por contenedor | Ver matriz |
 
 ## 4. Techos duros (límites de la plataforma)
 
 | Componente | Techo | Consecuencia al alcanzarlo |
 |---|---|---|
-| Oracle XE 21c | 2 vCPU, 2GB SGA, 2GB PGA, **12GB de datos** | Congestión de SGA/PGA; se llena la BD |
+| PostgreSQL 17 | Sin tope de datos ni de CPU por licencia; manda `MEM_LIMIT_POSTGRES` y el disco | Consultas lentas si le falta RAM; alerta de `DB_SIZE_ALERT_GB` |
+| Oracle XE 21c (hasta la limpieza) | 2 vCPU, 2GB SGA, 2GB PGA, **12GB de datos** | Congestión de SGA/PGA; se llena la BD |
 | PHP-FPM pool | `pm.max_children` | Si se satura → timeouts 502/504 |
 | OSAI uvicorn | `--workers` + semáforo `MAX_CONCURRENT_DOCS=5` | Backlog de análisis IA |
 | Reverb | 1 proceso, `scaling.enabled=false` | Saturación de WebSockets con muchos usuarios |
 
-**Conclusión:** el techo real de una instancia es **Oracle XE** (2 vCPU / 12GB
-datos). Si un municipio supera eso, migrar a PostgreSQL (ver Sección 9) o
-levantar una instancia adicional. No vale la pena comprar un VPS gigante si
-Oracle XE sigue siendo el cuello.
+**Conclusión:** con PostgreSQL desaparece el techo de 12GB / 2 vCPU que imponía
+Oracle XE. El límite pasa a ser la RAM y el disco del VPS. Si un municipio los
+supera, subir de VPS (Sección 7) o levantar una instancia adicional.
 
 ## 5. Runbook: qué verificar ante degradación en horas pico
 
@@ -85,8 +91,11 @@ docker compose exec -T redis redis-cli llen queues:pqrsd-ai
 docker compose exec -T redis redis-cli llen queues:default
 docker compose exec -T redis redis-cli info keyspace          # DBSIZE de sesiones
 
-# 4. ¿Oracle lento? 
-docker compose exec -T oracle-xe sh -c 'echo "SELECT 1 FROM DUAL;" | sqlplus -S SGD_MR7/sgd123@localhost/XEPDB1'
+# 4. ¿Base de datos lenta o llena?
+docker compose exec -T postgres pg_isready -U sgd -d sgd
+docker compose exec -T -u www-data -e HOME=/tmp app php artisan db:size   # db_size: N GB
+# Oracle (hasta la limpieza):
+# docker compose exec -T oracle-xe sh -c 'echo "SELECT 1 FROM DUAL;" | sqlplus -S SGD_MR7/sgd123@localhost/XEPDB1'
 
 # 5. ¿OSAI colapsado?
 docker compose logs --tail=50 osai
@@ -96,17 +105,18 @@ docker compose logs --tail=50 osai
 - Si hay OOM → subir `MEM_LIMIT_*` correspondiente en `.env` y recrear.
 - Si la cola `pqrsd-ai` acumula cientos de jobs → subir `WORKER_PQRSD_REPLICAS`.
 - Si FPM se satura → subir `PHP_FPM_MAX_CHILDREN` (respetando RAM).
-- Si Oracle responde lento en consultas → revisar índices (Sección 8).
+- Si la base responde lento en consultas → revisar índices (Sección 8).
 
 ## 6. ADR — Decisiones registradas
 
-### ADR-01: Colas y sesiones en Redis (no en Oracle)
-- **Contexto:** producción usaba `QUEUE_CONNECTION=database` y
+### ADR-01: Colas y sesiones en Redis (no en la base de datos)
+- **Contexto (histórico, con Oracle):** producción usaba `QUEUE_CONNECTION=database` y
   `SESSION_DRIVER=database` → cada request y cada poll de job golpeaba Oracle.
 - **Decisión:** `QUEUE_CONNECTION=redis`, `SESSION_DRIVER=redis`,
   `CACHE_DRIVER=redis` (Redis ya estaba corriendo).
 - **Por qué:** quita carga transaccional de Oracle, polling instantáneo
   (`--sleep=1`), y colas/sesiones no compiten por los 2GB de SGA de Oracle XE.
+  La regla sigue igual con PostgreSQL: colas y sesiones nunca en la base.
 
 ### ADR-02: `retry_after` > timeout de los jobs de IA
 - **Contexto:** `retry_after=90` < `timeout=180` de `ProcessDocumentJob` y el
@@ -124,7 +134,7 @@ docker compose logs --tail=50 osai
 
 ### ADR-04: Límites de memoria por contenedor
 - **Contexto:** sin `mem_limit`, un pico de OSAI (pandas/PyMuPDF) podía matar
-  Oracle o Redis por OOM (cascada).
+  la base de datos o Redis por OOM (cascada).
 - **Decisión:** `mem_limit` en cada servicio vía `MEM_LIMIT_*`.
 - **Por qué:** si un contenedor excede su tope, Docker mata solo a ese, no a la
   app completa.
@@ -143,8 +153,8 @@ docker compose logs --tail=50 osai
 ## 7. Procedimiento de upgrade a un VPS mayor
 
 1. Comprar el nuevo VPS (ver matriz de la Sección 2).
-2. Migrar datos (Oracle `oradata`, volúmenes de app/storage) — mismo flujo que
-   un VPS nuevo.
+2. Migrar datos (base PostgreSQL con `backup.sh` → `restore.sh`, volúmenes de
+   app/storage) — mismo flujo que un VPS nuevo.
 3. Editar `sgd-infra/.env`: aplicar la fila de la matriz del nuevo tamaño.
 4. Re-deploy:
    ```bash
@@ -156,9 +166,9 @@ docker compose logs --tail=50 osai
 
 No requiere cambios de código: todo es `.env`.
 
-## 8. Índices recomendados en Oracle
+## 8. Índices recomendados
 
-Validar con `EXPLAIN` los queries del dashboard (`DashboardController`) y
+Validar con `EXPLAIN` (en PostgreSQL, `EXPLAIN ANALYZE`) los queries del dashboard (`DashboardController`) y
 agregar índices donde falten:
 
 ```sql
@@ -172,16 +182,24 @@ CREATE INDEX idx_documents_dep_status ON documents(dependency_id, current_status
 CREATE INDEX idx_document_tasks_due ON document_tasks(due_date, status);
 ```
 
-## 9. Cuándo migrar de Oracle XE a PostgreSQL
+## 9. Migración de Oracle XE a PostgreSQL
 
-Oracle XE 21c tiene un **techo duro de 12GB de datos / 2 vCPU**. Considerar
-migrar a PostgreSQL cuando:
-- La BD de un municipio se acerque a ~9-10GB.
-- Se necesiten más de 2 vCPU de base de datos.
-- El costo de licencias/ops de Oracle supere el beneficio.
+La migración ya está hecha en el código (PostgreSQL 17 + pgvector); el VPS
+sigue en Oracle hasta hacer el cambio. Se hizo como
+proyecto separado, no como ajuste de rendimiento. Motivos de entonces: el techo
+duro de Oracle XE (12GB de datos / 2 vCPU) y su consumo de RAM.
 
-La migración es un proyecto separado (cambiar `DB_CONNECTION`, revisar queries
-específicas de Oracle) — NO hacerla como parte de ajustes de rendimiento.
+- **Memoria:** Postgres arranca con `MEM_LIMIT_POSTGRES=1g` (Oracle usaba 2560m–3g).
+  Mientras convivan (hasta la limpieza), se suman en la RAM del VPS.
+- **Traslado de datos:** `php artisan db:migrate-from-oracle` (ver
+  `docs/PRODUCTION.md`, sección 6b).
+- **Trampas de Oracle que ya no aplican:** `limit()` ignorado dentro de las
+  precargas, ORA-00942 en reglas `exists`, el tope de 12GB de XE y las columnas
+  VARCHAR2 medidas en bytes (Postgres mide caracteres; la regla `MaxBytes` se
+  conserva y es más estricta).
+- **Trabajo futuro:** ajustar parámetros de Postgres (memoria compartida, memoria
+  por consulta, conexiones) según mediciones reales en producción. Aún no hay
+  valores medidos: no cambiarlos a ciegas.
 
 ## 10. Rollback de cambios de rendimiento
 

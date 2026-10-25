@@ -21,7 +21,7 @@ en un VPS con Docker Compose.
 ```bash
 # 1. Configurar .env
 cp .env.example .env
-nano .env  # rellenar con valores reales
+nano .env  # rellenar con valores reales (POSTGRES_PASSWORD es obligatoria)
 
 # 2. Build del frontend
 cd ../SGD-Front
@@ -32,7 +32,7 @@ cd ../sgd-infra
 # 3. Levantar todo
 docker compose up -d
 
-# 4. Esperar a Oracle (~3 min) y migrar
+# 4. Esperar a la base de datos y migrar (el script espera solo)
 bash scripts/deploy-laravel.sh
 
 # 5. Verificar
@@ -43,7 +43,8 @@ bash scripts/healthcheck.sh
 
 | Servicio | Contenedor | Puerto interno | Descripción |
 |---|---|---|---|
-| Oracle XE | sgd-oracle | 1521 | Base de datos |
+| PostgreSQL 17 + pgvector | postgres | 5432 | Base de datos (sin puerto publicado) |
+| Oracle XE | sgd-oracle | 1521 | Base anterior, origen del traslado (hasta la limpieza) |
 | Redis | sgd-redis | 6379 | Cache + sesiones |
 | Laravel App | sgd-app | 9000 (FPM) | API principal |
 | Worker Default | sgd-worker-default | — | Cola de jobs default |
@@ -73,7 +74,29 @@ ssh -L 9001:localhost:9001 deploy@IP_DEL_VPS
 | `scripts/deploy-osai.sh` | Build y despliegue de OSAI |
 | `scripts/deploy-front.sh` | Build del frontend y reinicio de Nginx |
 | `scripts/healthcheck.sh` | Verifica que todos los servicios estén activos |
-| `scripts/backup.sh` | Backup de Oracle + storage |
+| `scripts/backup.sh` | Backup de la base (Postgres: `pg_dump`; Oracle: expdp, hasta la limpieza) + storage |
+| `scripts/restore.sh` | Restaura un backup (`--target=ensayo` o `--target=produccion`) |
+| `scripts/restore-rehearsal.sh` | Simulacro de restauración en una base temporal |
+
+## Base de datos
+
+La app usa **PostgreSQL 17** con las extensiones `vector` (pgvector) y `unaccent`.
+Base y usuario: `sgd`. Qué base usa la app se decide **solo** en `sgd-infra/.env` con `DB_*`.
+Mientras el VPS no haga el cambio, sigue en Oracle XE (hasta la limpieza).
+
+```bash
+# En sgd-infra/.env, para usar Postgres:
+DB_CONNECTION=pgsql
+DB_HOST=postgres
+DB_PORT=5432
+DB_DATABASE=sgd
+DB_USERNAME=sgd
+DB_PASSWORD=<igual a POSTGRES_PASSWORD>
+# Los datos de Oracle pasan a ORACLE_DB_USERNAME / ORACLE_DB_PASSWORD (origen del traslado)
+```
+
+El traslado de datos desde Oracle se hace con `php artisan db:migrate-from-oracle`
+(ver `docs/PRODUCTION.md`).
 
 ## Actualizar código
 
@@ -109,6 +132,6 @@ Internet → Cloudflare (SSL) → Nginx (:80/:443)
                                    └── /osai-api/ → OSAI (:8000)
                                             ↓ webhook
                                    Laravel ← workers (default + pqrsd-ai)
-                                   Oracle (:1521) ← Laravel
+                                   PostgreSQL (:5432) ← Laravel
                                    Redis (:6379) ← Laravel + Reverb
 ```

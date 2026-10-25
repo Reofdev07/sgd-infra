@@ -40,6 +40,7 @@ nano .env
 | `PASSPORT_CLIENT_ID` | `3` | Ver con `SELECT id FROM oauth_clients` |
 | `PASSPORT_CLIENT_SECRET` | El del `oauth_clients.secret` | Debe ser texto plano, **no hash** |
 | `SECRET_KEY` | `openssl rand -hex 32` | Para encriptar localStorage del frontend |
+| `POSTGRES_PASSWORD` | La que quieras (local) | Obligatoria: sin ella `docker compose` no arranca |
 
 ### API Keys de IA (opcional en local, pero necesarias para funcionalidad completa):
 
@@ -68,11 +69,12 @@ nano .env
 docker compose up -d
 ```
 
-Esto levanta 10 servicios:
+Esto levanta estos servicios:
 
 | Contenedor | Puerto interno | Propósito |
 |---|---|---|
-| `sgd-oracle` | 1521 | Base de datos Oracle XE |
+| `postgres` | 5432 | Base de datos PostgreSQL 17 + pgvector |
+| `sgd-oracle` | 1521 | Oracle XE, solo origen del traslado (hasta la limpieza) |
 | `sgd-redis` | 6379 | Cache y sesiones |
 | `sgd-app` | 9000 | Laravel PHP-FPM |
 | `sgd-reverb` | 8080 | WebSocket server |
@@ -83,15 +85,27 @@ Esto levanta 10 servicios:
 | `sgd-nginx` | 80, 443 | Reverse proxy + frontend SPA |
 | `sgd-portainer` | 9000 | Dashboard Docker (solo localhost) |
 
-### Oracle del host (opcional)
+### PostgreSQL local (desarrollo y pruebas)
 
-Si tienes Oracle XE corriendo en el host con usuario `SGD_MR7`, puerto `1522`, servicio `FREEPDB1`:
+`docker-compose.override.yml` trae un servicio `postgres` publicado en `localhost:5433`,
+con dos bases: `sgd` (desarrollo) y `sgd_test` (pruebas). Usuario `sgd`, contraseña `sgd`.
 
-- El archivo `docker-compose.override.yml` ya detecta esto y configura la conexión.
-- Los workers y scheduler también se configuran automáticamente.
+```bash
+docker compose up -d postgres   # en WSL sin integración: docker.exe compose up -d postgres
+```
+
+Las pruebas del backend (`php artisan test`) corren en la base `sgd_test` (lo fija `phpunit.xml`).
+
+### Oracle del host (solo para probar el traslado, hasta la limpieza)
+
+Oracle Free local ya no hace falta para trabajar. Solo sirve para probar el traslado
+de datos con `php artisan db:migrate-from-oracle`. Si lo tienes en el host con usuario
+`SGD_MR7`, puerto `1522`, servicio `FREEPDB1`:
+
+- El archivo `docker-compose.override.yml` ya configura esa conexión para la app, los workers y el scheduler.
 - Verifica que tu Oracle del host tenga el usuario `SGD_MR7`.
 
-**Para desconectar Oracle del host** (usar el contenedor Oracle en su lugar):
+**Para desconectar Oracle del host** (usar el contenedor Oracle en su lugar, hasta la limpieza):
 
 ```bash
 mv docker-compose.override.yml docker-compose.override.yml.bak
@@ -107,8 +121,8 @@ bash scripts/deploy-laravel.sh
 ```
 
 Este script ejecuta automáticamente:
-1. Espera a que Oracle esté listo
-2. `php artisan migrate --force` — todas las migraciones (151)
+1. Espera a que la base de la app esté lista (PostgreSQL u Oracle, según `DB_CONNECTION`)
+2. `php artisan migrate --force` — todas las migraciones (consolidadas: una por tabla)
 3. `php artisan passport:keys --force` — solo si no existen (persistencia)
 4. `php artisan passport:client --personal` — crea cliente personal si no existe
 5. `php artisan storage:link` — symlink de storage público
@@ -259,7 +273,15 @@ docker compose exec app php artisan passport:keys --force
 **Causa:** `config.json` tiene puerto/host incorrecto.
 **Solución:** Re-ejecutar `bash scripts/deploy-front.sh` para regenerar `config.json`.
 
-### Oracle no arranca
+### PostgreSQL no arranca
+**Causa:** Falta `POSTGRES_PASSWORD` en `.env`, falta de memoria o puerto ocupado.
+**Solución:**
+```bash
+docker compose logs postgres
+# Verificar que el puerto 5433 esté libre (servicio local del override)
+```
+
+### Oracle no arranca (solo si pruebas el traslado, hasta la limpieza)
 **Causa:** Falta de memoria o puerto ocupado.
 **Solución:**
 ```bash

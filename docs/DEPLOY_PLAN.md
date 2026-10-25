@@ -12,8 +12,11 @@ Internet → Traefik (puertos 80/443 del host, SSL automático)
      Laravel  OSAI   Reverb
      (FPM)   (FastAPI) (WS)
         ↓
-     Oracle XE
+     PostgreSQL 17 + pgvector
 ```
+
+> La base pasa de Oracle XE a PostgreSQL. Mientras el VPS no haga el cambio, Oracle XE sigue
+> activo (hasta la limpieza). El traslado de datos está en `docs/PRODUCTION.md` (sección 6b).
 
 Con Dockploy:
 - **Traefik** maneja SSL (Let's Encrypt automático, renovación automática)
@@ -128,6 +131,8 @@ Crear `docker-compose.dockploy.yml` con estos cambios respecto al original:
 oracle-xe, redis, app, worker-default, worker-pqrsd, scheduler, reverb, osai, nginx
 ```
 
+(Lista histórica de ese momento. Hoy el compose también trae `postgres`, y `oracle-xe` queda hasta la limpieza.)
+
 Dockploy no permite `container_name`.
 
 ### 6.2 — Cambiar puertos de nginx
@@ -182,7 +187,9 @@ nano .env
 | Variable | Cómo generar |
 |---|---|
 | `DOMAIN` | `demo.aviliontech.com` |
-| `ORACLE_PASSWORD` | Inventar una segura |
+| `POSTGRES_PASSWORD` | Inventar una segura (obligatoria; `DB_PASSWORD` lleva la misma) |
+| `DB_CONNECTION` y demás `DB_*` | `pgsql`, `postgres`, `5432`, `sgd`, `sgd` (ver `docs/PRODUCTION.md` 3.3) |
+| `ORACLE_PASSWORD` | Inventar una segura (Oracle, hasta la limpieza) |
 | `APP_KEY` | `docker compose run --rm app php artisan key:generate --show` |
 | `OSAI_API_TOKEN` | `openssl rand -hex 32` |
 | `REVERB_APP_ID` | `240902` (de seeders, no cambiar) |
@@ -262,7 +269,7 @@ Genera `config.json` con rutas HTTPS, host `demo.aviliontech.com`.
 
 ```bash
 bash scripts/healthcheck.sh
-# Esperado: 12 OK, 0 FAIL
+# Esperado: 16 OK, 0 FAIL
 ```
 
 Pruebas en navegador:
@@ -281,7 +288,7 @@ sudo crontab -e
 0 2 * * * cd /home/deploy/sgd-infra && bash scripts/backup.sh >> /home/deploy/backups/backup.log 2>&1
 ```
 
-Backups diarios de Oracle, storage Laravel, data OSAI (retención 7 días).
+Backups diarios de la base (PostgreSQL con `pg_dump`; Oracle con expdp hasta la limpieza), storage Laravel, data OSAI (retención 7 días).
 
 ---
 
