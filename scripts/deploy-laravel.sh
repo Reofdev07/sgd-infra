@@ -28,6 +28,38 @@ until docker compose exec -T app php -r '
 done
 echo "Base de datos lista."
 
+# Dependencias PHP (composer). Solo si composer.lock cambió desde la última instalación (huella en
+# vendor/.composer-lock.sha256). Se instala aparte, en .vendor-build/, y se cambia por vendor/ solo si terminó
+# bien: una falla a mitad de camino nunca deja vendor/ incompleto (pasó el 2026-10-25). FORZAR_COMPOSER=1 reinstala.
+echo "Revisando dependencias PHP (composer)..."
+docker compose exec -T -e FORZAR_COMPOSER="${FORZAR_COMPOSER:-0}" app sh -c '
+    set -e
+    cd /var/www/html
+    huella=$(sha256sum composer.lock | cut -d" " -f1)
+    if [ "$FORZAR_COMPOSER" != "1" ] && [ -f vendor/.composer-lock.sha256 ] && [ "$(cat vendor/.composer-lock.sha256)" = "$huella" ]; then
+        echo "Dependencias al día (composer.lock sin cambios)."
+        exit 0
+    fi
+    rm -rf .vendor-build
+    mkdir .vendor-build
+    cp composer.json composer.lock .vendor-build/
+    if ! (cd .vendor-build && composer install --no-dev --no-scripts --no-interaction --no-progress > instalacion.log 2>&1); then
+        echo "ERROR: composer install falló; vendor/ no se tocó. Últimas líneas:"
+        tail -15 .vendor-build/instalacion.log
+        rm -rf .vendor-build
+        exit 1
+    fi
+    rm -rf vendor.anterior
+    [ -d vendor ] && mv vendor vendor.anterior
+    mv .vendor-build/vendor vendor
+    rm -rf .vendor-build
+    composer dump-autoload --no-dev --optimize --no-interaction --no-scripts > /dev/null
+    php artisan package:discover --ansi > /dev/null
+    echo "$huella" > vendor/.composer-lock.sha256
+    rm -rf vendor.anterior
+    echo "Dependencias instaladas desde composer.lock."
+'
+
 # Migraciones (solo las pendientes, seguro de repetir)
 echo "Ejecutando migraciones..."
 docker compose exec -T app php artisan migrate --force
