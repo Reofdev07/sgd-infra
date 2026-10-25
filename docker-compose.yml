@@ -30,7 +30,7 @@ services:
     image: redis:7-alpine
     restart: always
     mem_limit: ${MEM_LIMIT_REDIS:-512m}
-    command: redis-server --appendonly yes --appendfsync everysec --maxmemory ${REDIS_MAXMEMORY:-256mb} --maxmemory-policy allkeys-lru ${REDIS_PASSWORD:+--requirepass ${REDIS_PASSWORD}}
+    command: redis-server --appendonly yes --appendfsync everysec --maxmemory ${REDIS_MAXMEMORY:-256mb} --maxmemory-policy ${REDIS_MAXMEMORY_POLICY:-volatile-lru} ${REDIS_PASSWORD:+--requirepass ${REDIS_PASSWORD}}
     volumes:
       - redis_data:/data
     healthcheck:
@@ -68,6 +68,13 @@ services:
       - CACHE_DRIVER=redis
       - QUEUE_CONNECTION=redis
       - QUEUE_RETRY_AFTER=${QUEUE_RETRY_AFTER:-600}
+      # Portal ciudadano (entrega 2A). La caché de configuración se arma en este contenedor: basta declararlas aquí.
+      # PORTAL_POW_ENFORCE=true solo con el front que resuelve la prueba de trabajo ya servido.
+      - PORTAL_POW_ENFORCE=${PORTAL_POW_ENFORCE:-false}
+      - PORTAL_POW_BITS=${PORTAL_POW_BITS:-16}
+      # Dominios que pueden llamar a la API desde el navegador (separados por comas). Vacío: solo el del portal.
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-}
+      - PORTAL_MAX_FILINGS_PER_EMAIL=${PORTAL_MAX_FILINGS_PER_EMAIL:-10}
       - SESSION_DRIVER=redis
       - BROADCAST_DRIVER=reverb
       # Pool PHP-FPM: se ajusta desde sgd-infra/.env segun la RAM del VPS
@@ -237,6 +244,23 @@ services:
       - sgd-network
 
   # ============================================
+  # Worker del chat IA (cola chat-ai)
+  # Cola propia: el chat es interactivo y no debe esperar tras lotes de la
+  # ventanilla (filing-ai) ni de la ventanilla pública (pqrsd-ai). tries=1: el
+  # chat no se reintenta (duplicaría la respuesta en pantalla y el costo de IA).
+  # ============================================
+  worker-chat:
+    extends:
+      service: worker-pqrsd
+    command: php artisan queue:work --queue=chat-ai --sleep=1 --timeout=200 --tries=1 --max-time=86400
+    mem_limit: ${MEM_LIMIT_CHAT:-512m}
+    deploy:
+      replicas: ${WORKER_CHAT_REPLICAS:-1}
+    depends_on:
+      app:
+        condition: service_started
+
+  # ============================================
   # Laravel Scheduler (cron interno)
   # ============================================
   scheduler:
@@ -338,6 +362,9 @@ services:
       - AI_MODEL_VISION_FALLBACK=${AI_MODEL_VISION_FALLBACK:-qwen/qwen-vl-plus:free}
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - MODEL_CLAUDE=${MODEL_CLAUDE:-claude-haiku-5-5}
+      - MODEL_CLAUDE_VISION=${MODEL_CLAUDE_VISION:-}
       - CO_API_KEY=${CO_API_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}

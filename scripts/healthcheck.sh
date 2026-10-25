@@ -1,7 +1,11 @@
 #!/bin/bash
 # scripts/healthcheck.sh — Verifica que todos los servicios estén funcionando
 # Ejecutar desde sgd-infra/
-set -e
+set +e
+
+# Trabajar siempre desde sgd-infra/ (lanzado desde otra carpeta no encontraba el compose ni el .env
+# y reportaba todo caído).
+cd "$(dirname "$0")/.." || exit 1
 
 if [ -f docker-compose.dockploy.yml ]; then
   COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.dockploy.yml}"
@@ -13,6 +17,7 @@ export COMPOSE_FILE
 echo "=== Health Check SGD ==="
 PASS=0
 FAIL=0
+FAILED_CHECKS=""
 
 check() {
     local name="$1"
@@ -23,19 +28,50 @@ check() {
     else
         echo "  [FAIL] $name"
         FAIL=$((FAIL+1))
+        FAILED_CHECKS="${FAILED_CHECKS}- ${name}\n"
     fi
 }
 
+# Token/chat hardcodeados como fallback (SGD-096: se rotan vía BotFather y se
+# mueven a variables de entorno en la fase de secretos). Centralizado aquí
+# para no repetir el bloque curl.
+# SGD-096: token y chat solo desde el entorno o el .env (antes estaban escritos aquí como valor por defecto).
+# Se cargan solo estas dos variables, no el .env completo.
+if [ -f .env ]; then
+    while IFS='=' read -r key value; do
+        [ -z "${!key:-}" ] && export "$key=$value"
+    done < <(grep -E '^TELEGRAM_(BOT_TOKEN|CHAT_ID)=' .env)
+fi
+
+send_telegram() {
+    local text="$1"
+    local token="${TELEGRAM_BOT_TOKEN:-}"
+    local chat="${TELEGRAM_CHAT_ID:-}"
+    if [ -z "$token" ] || [ -z "$chat" ]; then
+        echo "AVISO: faltan TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID en .env; alerta no enviada."
+        return 0
+    fi
+    curl -sf -X POST "https://api.telegram.org/bot$token/sendMessage" \
+        --data-urlencode "chat_id=$chat" \
+        --data-urlencode "text=$text"
+}
+
 # Contenedores activos
+# artisan como www-data (dueño de storage): si corre como root y crea el log del día, PHP-FPM no
+# puede escribirlo y toda excepción registrada termina en 500. XDG_* en /tmp: HOME de www-data es de root (PsySH).
+ARTISAN_USER="-u www-data -e XDG_CONFIG_HOME=/tmp -e XDG_DATA_HOME=/tmp -e XDG_RUNTIME_DIR=/tmp"
+
 check "Oracle XE"        "docker compose ps oracle-xe | grep -q 'healthy'"
 check "Redis"            "docker compose ps redis | grep -q 'healthy'"
-check "Laravel App"      "docker compose ps app | grep -q 'Up'"
+check "Laravel App"      "docker compose ps app | grep -q '(healthy)'"
 check "Worker Default"   "docker compose ps worker-default | grep -q 'Up'"
 check "Worker PQRSD"     "docker compose ps worker-pqrsd | grep -q 'Up'"
+check "Worker Filing"    "docker compose ps worker-filing | grep -q 'Up'"
+check "Worker Chat"      "docker compose ps worker-chat | grep -q 'Up'"
 check "Scheduler"        "docker compose ps scheduler | grep -q 'Up'"
-check "Reverb"           "docker compose ps reverb | grep -q 'Up'"
+check "Reverb"           "docker compose ps reverb | grep -q '(healthy)'"
 check "OSAI"             "docker compose ps osai | grep -q 'Up'"
-check "Nginx"            "docker compose ps nginx | grep -q 'Up'"
+check "Nginx"            "docker compose ps nginx | grep -q '(healthy)'"
 
 echo ""
 
@@ -48,22 +84,72 @@ check "OSAI /info"       "docker compose exec -T osai curl -sf http://localhost:
 # Frontend via HTTPS (Traefik → nginx → SPA)
 check "Frontend SPA"     "curl -sfk https://demo.aviliontech.com/ | grep -q 'id=q-app'"
 
+# Salud de colas: failed_jobs (Oracle), backlog en Redis y uso de memoria.
+# queue:health devuelve exit≠0 si se superan los umbrales (SGD-061).
+QUEUE_RC=0
+QUEUE_OUT=$(docker compose exec -T $ARTISAN_USER app php artisan queue:health --max-failed=0 --max-pending=200 2>&1) || QUEUE_RC=$?
+if [ "$QUEUE_RC" -eq 0 ]; then
+    echo "  [OK] Colas (failed/backlog/mem)"
+    PASS=$((PASS+1))
+else
+    echo "  [FAIL] Colas (failed/backlog/mem)"
+    FAIL=$((FAIL+1))
+    FAILED_CHECKS="${FAILED_CHECKS}- Colas (failed/backlog/mem)\n"
+fi
+
+# SGD-061: failed_jobs recientes (última hora) y backlog por cola individual
+RECENT_FAILED=$(docker compose exec -T $ARTISAN_USER app php artisan tinker --execute="echo \Illuminate\Support\Facades\DB::table('failed_jobs')->where('failed_at','>=',now()->subHour())->count();" 2>/dev/null | tr -d '[:space:]')
+if [ -n "$RECENT_FAILED" ] && [ "$RECENT_FAILED" -gt 10 ] 2>/dev/null; then
+    echo "  [WARN] $RECENT_FAILED failed_jobs en la última hora"
+    FAILED_CHECKS="${FAILED_CHECKS}- ${RECENT_FAILED} failed_jobs recientes (>10)\n"
+fi
+
+QUEUE_DEFAULT=$(docker compose exec -T $ARTISAN_USER app php artisan tinker --execute="echo \Illuminate\Support\Facades\Redis::llen('queues:default');" 2>/dev/null | tr -d '[:space:]')
+QUEUE_PQRSD=$(docker compose exec -T $ARTISAN_USER app php artisan tinker --execute="echo \Illuminate\Support\Facades\Redis::llen('queues:pqrsd-ai');" 2>/dev/null | tr -d '[:space:]')
+QUEUE_FILING=$(docker compose exec -T $ARTISAN_USER app php artisan tinker --execute="echo \Illuminate\Support\Facades\Redis::llen('queues:filing-ai');" 2>/dev/null | tr -d '[:space:]')
+if [ -n "$QUEUE_DEFAULT" ] && [ "$QUEUE_DEFAULT" -gt 50 ] 2>/dev/null; then
+    echo "  [WARN] Cola default con $QUEUE_DEFAULT jobs pendientes"
+    FAILED_CHECKS="${FAILED_CHECKS}- Cola default: ${QUEUE_DEFAULT} pendientes (>50)\n"
+fi
+if [ -n "$QUEUE_PQRSD" ] && [ "$QUEUE_PQRSD" -gt 50 ] 2>/dev/null; then
+    echo "  [WARN] Cola pqrsd-ai con $QUEUE_PQRSD jobs pendientes"
+    FAILED_CHECKS="${FAILED_CHECKS}- Cola pqrsd-ai: ${QUEUE_PQRSD} pendientes (>50)\n"
+fi
+if [ -n "$QUEUE_FILING" ] && [ "$QUEUE_FILING" -gt 50 ] 2>/dev/null; then
+    echo "  [WARN] Cola filing-ai con $QUEUE_FILING jobs pendientes"
+    FAILED_CHECKS="${FAILED_CHECKS}- Cola filing-ai: ${QUEUE_FILING} pendientes (>50)\n"
+fi
+
+# Tamaño de Oracle: alerta temprana antes de alcanzar el límite duro de 12 GB (SGD-110).
+DBSIZE_RC=0
+DBSIZE_OUT=$(docker compose exec -T $ARTISAN_USER app php artisan db:size --max-gb=8 2>&1) || DBSIZE_RC=$?
+if [ "$DBSIZE_RC" -eq 0 ]; then
+    echo "  [OK] Tamaño Oracle"
+    PASS=$((PASS+1))
+else
+    echo "  [FAIL] Tamaño Oracle"
+    FAIL=$((FAIL+1))
+    FAILED_CHECKS="${FAILED_CHECKS}- Tamaño Oracle\n"
+fi
+
 echo ""
 echo "Resultado: $PASS OK, $FAIL FAIL"
 [ "$FAIL" -eq 0 ] && echo "Todos los servicios están saludables." || echo "Hay servicios con problemas."
 
-# --- Telegram alert si hay servicios caídos ---
-TELEGRAM_BOT_TOKEN="${TELEGRAM_BOT_TOKEN:-8706852433:AAF6KVl9fzbehgmJrClbntquTwAdXen7r_U}"
-TELEGRAM_CHAT_ID="${TELEGRAM_CHAT_ID:-5096050646}"
-
+# --- Telegram alert si hay chequeos fallidos ---
 if [ "$FAIL" -gt 0 ]; then
-    MSG="🚨 *SGD ALERTA*: $FAIL servicios caídos
-$(date)
-✅ OK: $PASS  |  ❌ FAIL: $FAIL"
-    curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
-        -d "chat_id=$TELEGRAM_CHAT_ID" \
-        -d "text=$MSG" \
-        -d "parse_mode=Markdown" > /dev/null 2>&1
+    MSG="🚨 SGD ALERTA
+$(date '+%Y-%m-%d %H:%M:%S')
+✅ OK: $PASS  |  ❌ FAIL: $FAIL
+
+━━ Fallos ━━
+$(echo -e "$FAILED_CHECKS")
+━━ Colas ━━
+${QUEUE_OUT}
+
+━━ Oracle ━━
+${DBSIZE_OUT}"
+    send_telegram "$MSG"
 fi
 
 exit $FAIL

@@ -9,7 +9,7 @@ echo "Construyendo imagen OSAI..."
 docker compose build osai
 
 echo "Levantando OSAI..."
-docker compose up -d osai
+docker compose up -d --no-deps osai
 
 echo "Esperando a que OSAI esté listo..."
 sleep 10

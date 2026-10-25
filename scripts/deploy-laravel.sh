@@ -54,9 +54,20 @@ else
     docker compose exec -T app php artisan passport:keys --force
 fi
 
+# Cuenta clientes Passport de un tipo con Laravel cargado (antes `php -r` sin bootstrap fallaba siempre
+# y el script creía que ya existían: en una instancia nueva nunca se creaban y el login no funcionaba).
+# Imprime el número, o nada si no se pudo consultar (entonces NO se crea nada para no duplicar clientes).
+count_passport_clients() {
+    docker compose exec -T -u www-data -e XDG_CONFIG_HOME=/tmp -e XDG_DATA_HOME=/tmp -e XDG_RUNTIME_DIR=/tmp app \
+        php artisan tinker --execute="echo PHP_EOL.'COUNT='.DB::table('oauth_clients')->where('$1', 1)->count().PHP_EOL;" 2>/dev/null \
+        | grep -oE 'COUNT=[0-9]+' | cut -d= -f2
+}
+
 # Verificar si ya existe un cliente personal
-PERSONAL_CLIENT_EXISTS=$(docker compose exec -T app php -r 'echo \Illuminate\Support\Facades\DB::table("oauth_clients")->where("personal_access_client", 1)->count();' || echo 0)
-if [ "$PERSONAL_CLIENT_EXISTS" = "0" ]; then
+PERSONAL_CLIENT_EXISTS=$(count_passport_clients personal_access_client)
+if [ -z "$PERSONAL_CLIENT_EXISTS" ]; then
+    echo "WARN: no se pudo consultar oauth_clients; no se crea el cliente personal (revisar a mano)."
+elif [ "$PERSONAL_CLIENT_EXISTS" = "0" ]; then
     echo "Creando cliente personal de Passport..."
     docker compose exec -T app php artisan passport:client --personal --name="SGD Personal Access Client" --no-interaction
 else
@@ -64,8 +75,10 @@ else
 fi
 
 # Verificar si ya existe un cliente password grant
-PASSWORD_CLIENT_EXISTS=$(docker compose exec -T app php -r 'echo \Illuminate\Support\Facades\DB::table("oauth_clients")->where("password_client", 1)->count();' || echo 0)
-if [ "$PASSWORD_CLIENT_EXISTS" = "0" ]; then
+PASSWORD_CLIENT_EXISTS=$(count_passport_clients password_client)
+if [ -z "$PASSWORD_CLIENT_EXISTS" ]; then
+    echo "WARN: no se pudo consultar oauth_clients; no se crea el cliente password grant (revisar a mano)."
+elif [ "$PASSWORD_CLIENT_EXISTS" = "0" ]; then
     echo "Creando cliente password grant de Passport..."
     docker compose exec -T app php artisan passport:client --password --name="SGD Password Grant Client" --no-interaction
 else
@@ -86,7 +99,11 @@ docker compose exec -T app php artisan config:clear
 docker compose exec -T app php artisan config:cache
 docker compose exec -T app php artisan route:cache
 docker compose exec -T app php artisan view:cache
+
+# Los caches y vistas compiladas se generaron como root: devolverlos a www-data (PHP-FPM).
+# Si un archivo de storage queda de root (p. ej. el log diario), cada excepción registrada da 500.
 docker compose exec -T app php artisan event:cache
+docker compose exec -T app chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache
 
 # Reiniciar app para que FPM tome los nuevos caches y opcache limpio
 # (opcache_reset() vía CLI no afecta al pool FPM)
@@ -96,6 +113,13 @@ docker compose restart app
 # Reiniciar workers
 echo "Reiniciando queue workers..."
 docker compose exec -T app php artisan queue:restart || true
+
+# Reiniciar reverb y scheduler para que tomen el código actualizado
+echo "Reiniciando reverb (WebSocket)..."
+docker compose restart reverb || true
+
+echo "Reiniciando scheduler..."
+docker compose restart scheduler || true
 
 echo ""
 echo "=== Laravel deploy completado ==="

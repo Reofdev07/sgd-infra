@@ -9,6 +9,7 @@ if [ -f .env ]; then
 fi
 
 FRONT_DIR="${FRONTEND_PATH:-../SGD-Front}"
+INFRA_DIR="$(pwd)"
 
 echo "=== Deploy Frontend ==="
 
@@ -61,6 +62,10 @@ JSON
 
 echo "config.json generado para DOMAIN=$DOMAIN (${REVERB_SCHEME}://${DOMAIN}:${REVERB_PORT})"
 
+# --- robots.txt y mapa del sitio (apagado salvo PORTAL_INDEXABLE=true en .env) ---
+source "$INFRA_DIR/scripts/lib/portal-seo.sh"
+write_portal_seo dist/pwa "$DOMAIN" "${PORTAL_INDEXABLE:-false}"
+
 # --- Hornear el commit en version.json para poder verificar qué versión está desplegada ---
 GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 cat > dist/pwa/version.json <<JSON
@@ -81,6 +86,30 @@ fi
 # Volver a sgd-infra
 cd - >/dev/null
 
+# --- CSP: los scripts inline de index.html deben estar permitidos por hash en nginx ---
+# Si cambia el script inline (p. ej. otra variable en el .env del front) y la CSP está en modo
+# bloqueo, la app queda en blanco. En Report-Only solo se avisa.
+CSP_CONF="nginx/security-headers.conf"
+MISSING_HASHES=$(python3 - "$FRONT_DIR/dist/pwa/index.html" "$CSP_CONF" <<'PY'
+import base64, hashlib, re, sys
+html = open(sys.argv[1]).read()
+conf = open(sys.argv[2]).read()
+for body in re.findall(r"<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>", html, re.S):
+    digest = "sha256-" + base64.b64encode(hashlib.sha256(body.encode()).digest()).decode()
+    if digest not in conf:
+        print(digest)
+PY
+)
+if [ -n "$MISSING_HASHES" ]; then
+    if grep -q "add_header Content-Security-Policy " "$CSP_CONF"; then
+        echo "ERROR: CSP en modo bloqueo y faltan estos hashes en $CSP_CONF: $MISSING_HASHES"
+        exit 1
+    fi
+    echo "AVISO CSP: agregar a script-src en $CSP_CONF antes de pasar a modo bloqueo: $MISSING_HASHES"
+else
+    echo "OK: scripts inline de index.html cubiertos por la CSP"
+fi
+
 # --- Nginx: bind mount fix ---
 # npm run build-pwa borra y recrea dist/pwa/ (cambia el inodo),
 # rompiendo el bind mount de Docker. Hay que recrear el contenedor.
@@ -90,7 +119,8 @@ else
   COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.yml}"
 fi
 echo "Recreando nginx para refrescar bind mount (usando $COMPOSE_FILE)..."
-docker compose -f "$COMPOSE_FILE" up -d --force-recreate nginx
+# --no-deps: recrear solo nginx; sin él, compose reconcilia dependencias con config cambiada (p. ej. reiniciar Oracle).
+docker compose -f "$COMPOSE_FILE" up -d --no-deps --force-recreate nginx
 
 echo ""
 echo "=== Frontend deploy completado ==="
