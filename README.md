@@ -90,8 +90,8 @@ DB_CONNECTION=pgsql
 DB_HOST=postgres
 DB_PORT=5432
 DB_DATABASE=sgd
-DB_USERNAME=sgd
-DB_PASSWORD=<igual a POSTGRES_PASSWORD>
+DB_USERNAME=sgd_app          # rol de la app, sin superusuario (se crea en el cambio)
+DB_PASSWORD=<contraseña de sgd_app>
 # Los datos de Oracle pasan a ORACLE_DB_USERNAME / ORACLE_DB_PASSWORD (origen del traslado)
 ```
 

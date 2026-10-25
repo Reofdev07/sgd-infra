@@ -66,11 +66,11 @@ send_telegram() {
 ARTISAN_USER="-u www-data -e XDG_CONFIG_HOME=/tmp -e XDG_DATA_HOME=/tmp -e XDG_RUNTIME_DIR=/tmp"
 
 if [ "$DB_ENGINE" = "pgsql" ]; then
-    check "PostgreSQL"       "docker compose ps postgres | grep -q 'healthy'"
+    check "PostgreSQL"       "docker compose ps postgres | grep -q '(healthy)'"
 else
-    check "Oracle XE"        "docker compose ps oracle-xe | grep -q 'healthy'"
+    check "Oracle XE"        "docker compose ps oracle-xe | grep -q '(healthy)'"
 fi
-check "Redis"            "docker compose ps redis | grep -q 'healthy'"
+check "Redis"            "docker compose ps redis | grep -q '(healthy)'"
 check "Laravel App"      "docker compose ps app | grep -q '(healthy)'"
 check "Worker Default"   "docker compose ps worker-default | grep -q 'Up'"
 check "Worker PQRSD"     "docker compose ps worker-pqrsd | grep -q 'Up'"
