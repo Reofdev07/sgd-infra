@@ -116,12 +116,12 @@ else
 fi
 
 # Encontrar los archivos más recientes
-PGDUMP=$(ls -t "$RESTORE_DIR"/sgd_backup_*.pgdump 2>/dev/null | head -1)
+PGDUMP=$(ls -t "$RESTORE_DIR"/sgd_backup_*.pgdump 2>/dev/null | head -1 || true)
 PG_USER="${POSTGRES_USER:-sgd}"
 PG_DB="${POSTGRES_DB:-sgd}"
 PG_TEST_DB="sgd_restore_test"
-STORAGE_TAR=$(ls -t "$RESTORE_DIR"/laravel_storage_*.tar.gz 2>/dev/null | head -1)
-OSAI_TAR=$(ls -t "$RESTORE_DIR"/osai_data_*.tar.gz 2>/dev/null | head -1)
+STORAGE_TAR=$(ls -t "$RESTORE_DIR"/laravel_storage_*.tar.gz 2>/dev/null | head -1 || true)
+OSAI_TAR=$(ls -t "$RESTORE_DIR"/osai_data_*.tar.gz 2>/dev/null | head -1 || true)
 
 echo ""
 echo "Archivos encontrados:"
@@ -132,6 +132,30 @@ echo "Archivos encontrados:"
 # ============================================
 # 2. Restaurar la base de datos (Postgres)
 # ============================================
+# Servicios que escriben en la base: se detienen mientras se restaura sobre producción.
+ESCRITORES="worker-default worker-pqrsd worker-filing worker-chat scheduler reverb"
+ARTISAN="docker compose exec -T -u www-data -e HOME=/tmp app php artisan"
+
+# pg_restore en una sola transacción y deteniéndose en el primer error: si falla, la base queda como estaba.
+# Devuelve el código de pg_restore; el detalle queda en $RESTORE_DIR/pg_restore.log.
+restaurar_base() {
+    local base="$1"; shift
+    local rc=0
+    docker compose exec -T postgres pg_restore -U "$PG_USER" -d "$base" --single-transaction --exit-on-error "$@" \
+        < "$PGDUMP" > "$RESTORE_DIR/pg_restore.log" 2>&1 || rc=$?
+    if [ "$rc" -ne 0 ]; then
+        echo "ERROR: pg_restore falló (código $rc). La transacción se revirtió: $base quedó como estaba."
+        tail -20 "$RESTORE_DIR/pg_restore.log"
+    fi
+    return "$rc"
+}
+
+volver_a_levantar() {
+    echo "Levantando de nuevo los servicios y quitando el mantenimiento..."
+    docker compose up -d --no-deps $ESCRITORES >/dev/null 2>&1 || echo "WARN: no se pudieron levantar todos los servicios ($ESCRITORES)"
+    $ARTISAN up >/dev/null 2>&1 || echo "WARN: no se pudo quitar el modo mantenimiento (php artisan up)"
+}
+
 if [ "$SKIP_DB" -eq 0 ] && [ -n "$PGDUMP" ]; then
     echo ""
     echo "--- Restaurando Postgres ---"
@@ -140,11 +164,18 @@ if [ "$SKIP_DB" -eq 0 ] && [ -n "$PGDUMP" ]; then
         echo "Base de ensayo $PG_TARGET_DB (mismo servidor, sin tocar $PG_DB)..."
         docker compose exec -T postgres dropdb -U "$PG_USER" --if-exists "$PG_TARGET_DB"
         docker compose exec -T postgres createdb -U "$PG_USER" "$PG_TARGET_DB"
-        docker compose exec -T postgres pg_restore -U "$PG_USER" -d "$PG_TARGET_DB" --no-owner < "$PGDUMP" 2>&1 | tail -5 || true
+        restaurar_base "$PG_TARGET_DB" --no-owner || { echo "El ensayo falló: revise $RESTORE_DIR/pg_restore.log"; exit 1; }
     else
         PG_TARGET_DB="$PG_DB"
-        echo "Restaurando sobre $PG_TARGET_DB (pg_restore --clean)..."
-        docker compose exec -T postgres pg_restore -U "$PG_USER" -d "$PG_TARGET_DB" --clean --if-exists --no-owner < "$PGDUMP" 2>&1 | tail -5 || true
+        echo "Mantenimiento: la app deja de atender y se detienen $ESCRITORES..."
+        $ARTISAN down --retry=60 >/dev/null || { echo "ERROR: no se pudo poner la app en mantenimiento; no se restauró nada."; exit 1; }
+        trap volver_a_levantar EXIT
+        docker compose stop $ESCRITORES >/dev/null
+        echo "Restaurando sobre $PG_TARGET_DB (pg_restore --clean, conserva los dueños del respaldo)..."
+        restaurar_base "$PG_TARGET_DB" --clean --if-exists || exit 1
+        echo "Base restaurada."
+        # Opcache y caches con la base nueva; el trap levanta los servicios al salir.
+        $ARTISAN optimize:clear >/dev/null 2>&1 || true
     fi
 elif [ "$SKIP_DB" -eq 1 ]; then
     echo ""
