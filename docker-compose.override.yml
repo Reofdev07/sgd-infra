@@ -17,6 +17,8 @@ services:
       POSTGRES_DB: sgd
       POSTGRES_USER: sgd
       POSTGRES_PASSWORD: sgd
+    # Replicación lógica para el servicio de sincronización (PowerSync); el tope evita que un slot detenido llene el disco.
+    command: ["postgres", "-c", "wal_level=logical", "-c", "max_slot_wal_keep_size=2GB"]
     ports:
       - "5433:5432"
     volumes:
@@ -29,6 +31,29 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  # Servicio de sincronización (trabajo sin conexión). Preparar la base antes: bash powersync/preparar-local.sh
+  powersync:
+    image: journeyapps/powersync-service:1.27.2
+    restart: unless-stopped
+    command: ["start", "-r", "unified"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      POWERSYNC_CONFIG_PATH: /config/service.yaml
+      NODE_OPTIONS: --max-old-space-size=1000
+      PS_DATA_SOURCE_URI: postgresql://powersync_rep:powersync_rep@postgres:5432/sgd
+      PS_STORAGE_SOURCE_URI: postgresql://powersync_storage:powersync_storage@postgres:5432/powersync_storage
+      PS_JWKS_URL: http://nginx/api/sync/jwks
+      PS_PORT: "8080"
+      PS_ADMIN_TOKEN: solo-local
+    volumes:
+      - ./powersync:/config:ro
+    networks:
+      - sgd-network
+    ports:
+      - "8089:8080"
 
   app:
     image: sgd-php:latest
