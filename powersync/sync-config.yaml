@@ -1,10 +1,11 @@
-# Qué filas recibe cada equipo. Prototipo (Etapa 1): solo las tareas asignadas al usuario del token.
+# Qué filas recibe cada equipo. Prototipo (Etapa 1): solo las tareas vigentes asignadas al usuario del token.
+# El id va como texto: la base local de PowerSync exige ids de texto.
 config:
   edition: 3
 streams:
   mis_tareas:
     auto_subscribe: true
     query: >
-      SELECT id, document_id, assigned_user_id, status, notes, due_date, version, updated_at
+      SELECT CAST(id AS text) AS id, document_id, assigned_user_id, status, notes, due_date, version, updated_at
       FROM document_tasks
-      WHERE assigned_user_id = CAST(auth.user_id() AS integer)
+      WHERE assigned_user_id = CAST(auth.user_id() AS integer) AND deleted_at IS NULL

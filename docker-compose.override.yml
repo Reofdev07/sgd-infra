@@ -56,7 +56,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
-      - "8089:8080"
+      - "127.0.0.1:8089:8080"
 
   app:
     image: sgd-php:latest

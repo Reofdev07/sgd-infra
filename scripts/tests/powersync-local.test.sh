@@ -33,6 +33,11 @@ check "publicación powersync solo con document_tasks" \
 check "rol powersync_rep con REPLICATION" test "$(psql_sgd "select rolreplication from pg_roles where rolname = 'powersync_rep'")" = "t"
 check "base powersync_storage existe" test "$(psql_sgd "select count(*) from pg_database where datname = 'powersync_storage'")" = "1"
 
+echo "Qué se sincroniza"
+check "el stream no envía tareas borradas" grep -q "deleted_at IS NULL" powersync/sync-config.yaml
+check "el id viaja como texto (lo exige la base local)" grep -q "CAST(id AS text) AS id" powersync/sync-config.yaml
+check "PowerSync solo escucha en este equipo" grep -q '"127.0.0.1:8089:8080"' docker-compose.override.yml
+
 echo "Servicio PowerSync"
 "$DOCKER" compose up -d powersync > /dev/null 2>&1
 vivo=0
