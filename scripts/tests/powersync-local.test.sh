@@ -2,6 +2,13 @@
 # Prueba del servicio de sincronización (PowerSync) en el entorno local.
 # Uso: bash scripts/tests/powersync-local.test.sh
 # Levanta postgres y powersync con el override local, prepara la base y comprueba que replica.
+#
+# Prueba manual con un token de Laravel (Laravel local con `php artisan serve --host=0.0.0.0 --port=8000`
+# y llaves creadas con `php artisan sync:keys`):
+#   TOKEN=$(curl -s -H "Authorization: Bearer <token de sesión>" http://127.0.0.1:8000/api/v1/sync/token | jq -r .token)
+#   curl -sN -X POST http://localhost:8089/sync/stream -H "Authorization: Token $TOKEN" \
+#        -H 'Content-Type: application/json' -d '{"raw_data":true}'
+# Debe llegar un checkpoint con las tareas del usuario; un token alterado responde 401.
 set -u
 cd "$(dirname "$0")/../.."
 DOCKER="${DOCKER:-docker}"
