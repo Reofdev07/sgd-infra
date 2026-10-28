@@ -1,0 +1,45 @@
+# Prueba técnica de la Etapa 2, Tarea 1 (no se despliega): ¿qué filtros acepta Sync Streams edition 3?
+# Cada stream prueba una capacidad con datos del token firmado a mano (claims deps, sede, desde).
+config:
+  edition: 3
+streams:
+  # a. lista de dependencias en el token
+  a_deps_en_token:
+    auto_subscribe: true
+    query: >
+      SELECT CAST(id AS text) AS id, dependence_id FROM documents
+      WHERE dependence_id IN (SELECT value FROM json_each(auth.parameter('deps'))) AND deleted_at IS NULL
+  # b. subconsulta sobre otra tabla
+  b_tareas_de_radicados_visibles:
+    auto_subscribe: true
+    query: >
+      SELECT CAST(id AS text) AS id, document_id FROM document_tasks
+      WHERE document_id IN (SELECT id FROM documents WHERE branch_id = auth.parameter('sede') AND deleted_at IS NULL)
+  # c. fecha comparada con un dato del token: NO se puede ("solo igualdad entre fila y parámetros").
+  #    Se prueba la salida: comparar con una constante.
+  c_fecha_constante:
+    auto_subscribe: true
+    query: >
+      SELECT CAST(id AS text) AS id, outcome_at FROM documents
+      WHERE outcome_at >= '2025-10-27' AND deleted_at IS NULL
+  # d. segunda tabla local desde la misma tabla de origen
+  d_otra_tabla_local:
+    auto_subscribe: true
+    query: >
+      SELECT CAST(id AS text) AS id, subject FROM documents AS documento_datos
+      WHERE branch_id = auth.parameter('sede') AND sensitivity_level != 'restricted' AND sensitivity_level != 'reservado' AND sensitivity_level != 'confidencial'
+      AND deleted_at IS NULL
+  # e. «o» entre una condición de la fila y una del token
+  e_publico_o_mis_dependencias:
+    auto_subscribe: true
+    query: >
+      SELECT CAST(id AS text) AS id, sensitivity_level FROM documents AS prueba_e
+      WHERE branch_id = auth.parameter('sede') AND deleted_at IS NULL
+      AND (sensitivity_level = 'publico' OR dependence_id IN (SELECT value FROM json_each(auth.parameter('deps'))))
+  # f. permiso del token sin relación con la fila (clasif) y responsable = usuario
+  f_permiso_o_responsable:
+    auto_subscribe: true
+    query: >
+      SELECT CAST(id AS text) AS id FROM documents AS prueba_f
+      WHERE branch_id = auth.parameter('sede') AND deleted_at IS NULL
+      AND (auth.parameter('clasif') = 1 OR responsible_user_id = CAST(auth.user_id() AS integer))
