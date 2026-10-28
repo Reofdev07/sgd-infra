@@ -6,6 +6,10 @@ services:
     image: pgvector/pgvector:pg17
     restart: always
     mem_limit: ${MEM_LIMIT_POSTGRES:-1g}
+    # Replicación lógica para PowerSync (trabajo sin conexión). max_slot_wal_keep_size: si PowerSync se cae, Postgres
+    # no guarda más WAL que esto (el slot se invalida y PowerSync vuelve a copiar todo); sin tope llenaría el disco.
+    # Cambiar wal_level exige reiniciar Postgres.
+    command: ["postgres", "-c", "wal_level=logical", "-c", "max_slot_wal_keep_size=${PG_MAX_SLOT_WAL:-2GB}"]
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-sgd}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD en sgd-infra/.env}
@@ -25,6 +29,40 @@ services:
       timeout: 5s
       retries: 10
       start_period: 20s
+    networks:
+      - sgd-network
+
+  # ============================================
+  # PowerSync (trabajo sin conexión): entrega a cada equipo lo que su usuario puede ver
+  # ============================================
+  # Lee Postgres por replicación lógica (rol powersync_rep, publicación powersync) y guarda su estado en la base
+  # powersync_storage del mismo Postgres. Valida los tokens que emite Laravel con GET /api/sync/jwks. Sin puerto
+  # publicado: la app llega por nginx (/powersync/). Preparación: bash powersync/preparar.sh (docs/PRODUCTION.md).
+  # Sin POWERSYNC_*_PASSWORD en el .env no conecta (solo este servicio falla; el healthcheck lo marca).
+  powersync:
+    image: journeyapps/powersync-service:1.27.2
+    restart: unless-stopped
+    command: ["start", "-r", "unified"]
+    mem_limit: ${MEM_LIMIT_POWERSYNC:-1500m}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      POWERSYNC_CONFIG_PATH: /config/service.yaml
+      NODE_OPTIONS: --max-old-space-size=${POWERSYNC_NODE_HEAP_MB:-1024}
+      PS_DATA_SOURCE_URI: postgresql://powersync_rep:${POWERSYNC_REP_PASSWORD:-}@postgres:5432/${POSTGRES_DB:-sgd}
+      PS_STORAGE_SOURCE_URI: postgresql://powersync_storage:${POWERSYNC_STORAGE_PASSWORD:-}@postgres:5432/powersync_storage
+      PS_JWKS_URL: http://nginx/api/sync/jwks
+      PS_PORT: "8080"
+      PS_ADMIN_TOKEN: ${POWERSYNC_ADMIN_TOKEN:-}
+    volumes:
+      - ./powersync:/config:ro
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/probes/liveness').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
     networks:
       - sgd-network
 
@@ -89,6 +127,11 @@ services:
       - PORTAL_POW_BITS=${PORTAL_POW_BITS:-16}
       # Dominios que pueden llamar a la API desde el navegador (separados por comas). Vacío: solo el del portal.
       - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-}
+      # Trabajo sin conexión: dirección pública de PowerSync (la que usan los equipos) y la interna (prueba de paridad).
+      # Vacía = la app no abre la base local. Mitad de servidor de la llave del escritorio: SYNC_DEVICE_SECRET.
+      - POWERSYNC_URL=${POWERSYNC_URL:-}
+      - POWERSYNC_INTERNAL_URL=http://powersync:8080
+      - SYNC_DEVICE_SECRET=${SYNC_DEVICE_SECRET:-}
       - PORTAL_MAX_FILINGS_PER_EMAIL=${PORTAL_MAX_FILINGS_PER_EMAIL:-10}
       - SESSION_DRIVER=redis
       - BROADCAST_DRIVER=reverb
@@ -493,6 +536,8 @@ services:
     volumes:
       - ./nginx/sgd.conf:/etc/nginx/conf.d/default.conf:ro
       - ./nginx/security-headers.conf:/etc/nginx/snippets/security-headers.conf:ro
+      # Instaladores y canal de actualizaciones de la app de escritorio (fuera de dist/: el deploy del front no los borra).
+      - ./escritorio:/usr/share/nginx/escritorio:ro
       - ${FRONTEND_DIST_PATH:-../SGD-Front/dist/pwa}:/usr/share/nginx/html:ro
       - ${LARAVEL_PATH:-../SDG-Back-api}/public:/var/www/html/public:ro
       - app_storage:/var/www/html/storage:ro

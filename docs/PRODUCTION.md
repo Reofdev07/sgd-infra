@@ -670,6 +670,52 @@ Para verificar el estado del certificado:
 docker compose run --rm certbot certificates
 ```
 
+## 9b. PowerSync (trabajo sin conexión)
+
+PowerSync entrega a cada equipo (web y app de escritorio) lo que su usuario puede ver, para trabajar sin red. Lee
+Postgres por replicación lógica y guarda su estado en la base `powersync_storage` del mismo Postgres. Quién ve qué
+lo decide Laravel: lo pone en el token de `GET /api/v1/sync/token`. Diseño: `SDG-Back-api/docs/superpowers/specs/
+2026-10-26-trabajo-sin-conexion-design.md`.
+
+### Instalar (una vez por instancia)
+
+1. `.env` (sin imprimir valores; generar con `openssl rand -hex 24`, o `-hex 32` para `SYNC_DEVICE_SECRET`):
+   `POWERSYNC_URL=https://DOMINIO/powersync`, `POWERSYNC_REP_PASSWORD`, `POWERSYNC_STORAGE_PASSWORD`,
+   `POWERSYNC_ADMIN_TOKEN`, `SYNC_DEVICE_SECRET`, y sumar `http://tauri.localhost` a `CORS_ALLOWED_ORIGINS` (app de
+   escritorio). Memoria: `MEM_LIMIT_POWERSYNC` (1500m).
+2. **Corte de 1–2 minutos:** recrear Postgres para encender `wal_level=logical`:
+   `docker compose -f docker-compose.dockploy.yml up -d --no-deps postgres`. Esperar `(healthy)`.
+3. Migraciones y app: `bash scripts/deploy-laravel.sh`.
+4. Roles, publicación y base de estado: `bash powersync/preparar.sh` (se puede repetir; también rota contraseñas).
+5. Llaves del token, como `www-data` (si corre como root, PHP-FPM no las puede leer):
+   `docker compose -f docker-compose.dockploy.yml exec -T -u www-data app php artisan sync:keys`.
+6. Levantar PowerSync y recargar nginx:
+   `docker compose -f docker-compose.dockploy.yml up -d --no-deps powersync nginx`.
+7. Verificar:
+   - `bash scripts/healthcheck.sh`: aparecen «PowerSync», «Replicación PowerSync» y «WAL retenido».
+   - `docker compose -f docker-compose.dockploy.yml exec -T -u www-data app php artisan sync:paridad`: todo `ok`.
+   - `curl -s https://DOMINIO/powersync/probes/liveness` responde 200.
+
+### Operación
+
+- **Permiso del escritorio:** guardar la sede completa en la app de Windows exige el permiso `offline-desktop`. Lo
+  trae el rol `admin`; se asigna a otros roles en Roles y Permisos. Sin él, el equipo recibe lo mismo que la web.
+- **Si PowerSync se cae,** Postgres guarda WAL para él hasta `PG_MAX_SLOT_WAL` (2GB). Pasado eso, el slot se
+  invalida (`wal_status = lost`) y el disco no se llena. Al volver, PowerSync copia todo de nuevo y los equipos se
+  ponen al día solos. El healthcheck avisa al 80 % del tope. Prueba: `bash scripts/tests/powersync-wal-tope.test.sh`.
+- **Rotar las llaves del token sin cortar a nadie:**
+  1. Mover las actuales a `storage/sync-anterior-*.key`.
+  2. `sync:keys`.
+  3. Poner `SYNC_KEY_ID` nuevo y `SYNC_PREVIOUS_KEY_ID` / `SYNC_PREVIOUS_PUBLIC_KEY_PATH` con la anterior.
+  4. Desplegar.
+  5. A los 15 minutos (vencen los tokens viejos), quitar las `SYNC_PREVIOUS_*`.
+- **`SYNC_DEVICE_SECRET` no se rota** salvo filtración: las bases de los equipos quedan ilegibles y el programa las
+  borra y descarga todo de nuevo.
+- **Respaldos:** `powersync_storage` no se respalda; PowerSync la reconstruye desde `sgd`. El simulacro
+  (`scripts/restore-rehearsal.sh`) debe seguir dando 0 tablas faltantes.
+- **App de escritorio:** los instaladores y `latest.json` van en `sgd-infra/escritorio/tauri/` (ver el README de esa
+  carpeta). Se arman con el flujo «Escritorio» de SGD-Front para este dominio.
+
 ## 10. Seguridad
 
 ### Firewall (UFW)

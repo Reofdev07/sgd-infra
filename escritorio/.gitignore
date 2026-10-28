@@ -1,0 +1,3 @@
+# Los instaladores se publican aquí en el servidor; no van al repositorio.
+/tauri/*
+!/tauri/.gitkeep

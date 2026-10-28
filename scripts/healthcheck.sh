@@ -73,6 +73,28 @@ check "Reverb"           "docker compose ps reverb | grep -q '(healthy)'"
 check "OSAI"             "docker compose ps osai | grep -q 'Up'"
 check "Nginx"            "docker compose ps nginx | grep -q '(healthy)'"
 
+# PowerSync (trabajo sin conexión), solo si esta instalación lo tiene en el compose.
+# - Replicación: hay un slot de PowerSync vivo y su retraso es menor que PS_MAX_LAG_MB (256).
+# - WAL retenido: lo que Postgres guarda para el slot no pasa del 80 % de max_slot_wal_keep_size; al llegar al
+#   100 % el slot se invalida y PowerSync vuelve a copiar todo (docs/PRODUCTION.md › PowerSync).
+pg_valor() { docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "$1"' _ "$1" 2>/dev/null | tr -d '[:space:]'; }
+powersync_replica() {
+    local lag
+    lag=$(pg_valor "select max(pg_wal_lsn_diff(pg_current_wal_lsn(), confirmed_flush_lsn))::bigint / 1048576 from pg_replication_slots where slot_name like 'powersync%' and wal_status <> 'lost'")
+    [ -n "$lag" ] && [ "$lag" -lt "${PS_MAX_LAG_MB:-256}" ]
+}
+powersync_wal() {
+    local retenido tope
+    retenido=$(pg_valor "select coalesce(max(pg_wal_lsn_diff(pg_current_wal_lsn(), restart_lsn)), 0)::bigint / 1048576 from pg_replication_slots where slot_name like 'powersync%'")
+    tope=$(pg_valor "select setting from pg_settings where name = 'max_slot_wal_keep_size'")
+    [ -n "$retenido" ] && [ -n "$tope" ] && [ "$tope" -gt 0 ] && [ $((retenido * 100)) -lt $((tope * 80)) ]
+}
+if docker compose config --services 2>/dev/null | grep -qx powersync; then
+    check "PowerSync"              "docker compose ps powersync | grep -q '(healthy)'"
+    check "Replicación PowerSync"  "powersync_replica"
+    check "WAL retenido (PowerSync)" "powersync_wal"
+fi
+
 echo ""
 
 # Health endpoint de Laravel via HTTPS (Traefik → nginx → app)
