@@ -335,6 +335,13 @@ streams:
       FROM process_activities AS actividades
       WHERE auth.parameter('perfil') = 'escritorio' AND auth.parameter('entidad') IS NOT NULL AND deleted_at IS NULL
 
+  escritorio_pasos:
+    auto_subscribe: true
+    query: >
+      SELECT CAST(id AS text) AS id, process_id, name, "order" AS orden
+      FROM process_steps AS pasos
+      WHERE auth.parameter('perfil') = 'escritorio' AND auth.parameter('entidad') IS NOT NULL AND deleted_at IS NULL
+
   escritorio_festivos:
     auto_subscribe: true
     query: >
@@ -369,6 +376,13 @@ streams:
     query: >
       SELECT CAST(id AS text) AS id, process_step_id, name, "order" AS orden, status, depends_on_activity_id
       FROM process_activities AS actividades
+      WHERE auth.parameter('perfil') = 'web' AND auth.parameter('entidad') IS NOT NULL AND deleted_at IS NULL
+
+  web_pasos:
+    auto_subscribe: true
+    query: >
+      SELECT CAST(id AS text) AS id, process_id, name, "order" AS orden
+      FROM process_steps AS pasos
       WHERE auth.parameter('perfil') = 'web' AND auth.parameter('entidad') IS NOT NULL AND deleted_at IS NULL
 
   web_festivos:
