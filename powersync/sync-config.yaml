@@ -254,6 +254,21 @@ streams:
              OR doc_responsible_user_id = CAST(auth.user_id() AS integer)
              OR doc_dependence_id IN (SELECT value FROM json_each(auth.parameter('deps'))))
 
+  escritorio_suspensiones:
+    auto_subscribe: true
+    query: >
+      SELECT CAST(id AS text) AS id, document_id, action_id, suspended_at, resumed_at, extended_until, created_at,
+             updated_at
+      FROM document_suspensions AS suspensiones
+      WHERE auth.parameter('perfil') = 'escritorio' AND doc_deleted = false
+        AND doc_branch_id = auth.parameter('sede') AND doc_sync_en_ventana = true
+        AND (doc_sensitivity_level IS NULL
+             OR (doc_sensitivity_level != 'clasificado' AND doc_sensitivity_level != 'reservado'
+                 AND doc_sensitivity_level != 'confidencial' AND doc_sensitivity_level != 'restricted')
+             OR auth.parameter('clasif') = 1 OR auth.parameter('admin_sede') = 1
+             OR doc_responsible_user_id = CAST(auth.user_id() AS integer)
+             OR doc_dependence_id IN (SELECT value FROM json_each(auth.parameter('deps'))))
+
   web_trazas:
     auto_subscribe: true
     query: >
@@ -306,6 +321,19 @@ streams:
                  AND doc_sensitivity_level != 'confidencial' AND doc_sensitivity_level != 'restricted'))
 
   # ── Etapa 3: nombres y catálogos (los dos perfiles; una instancia = una alcaldía) ─────────────────────────────
+  web_suspensiones:
+    auto_subscribe: true
+    query: >
+      SELECT CAST(id AS text) AS id, document_id, action_id, suspended_at, resumed_at, extended_until, created_at,
+             updated_at
+      FROM document_suspensions AS suspensiones
+      WHERE auth.parameter('perfil') = 'web' AND doc_deleted = false
+        AND doc_branch_id = auth.parameter('sede') AND doc_sync_en_ventana = true
+        AND doc_responsible_user_id = CAST(auth.user_id() AS integer)
+        AND (doc_sensitivity_level IS NULL
+             OR (doc_sensitivity_level != 'clasificado' AND doc_sensitivity_level != 'reservado'
+                 AND doc_sensitivity_level != 'confidencial' AND doc_sensitivity_level != 'restricted'))
+
   escritorio_funcionarios:
     auto_subscribe: true
     query: >

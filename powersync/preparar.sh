@@ -12,7 +12,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 DOCKER="${DOCKER:-docker}"
-TABLAS="document_tasks documents dependencies document_traces document_actions document_electronic_record electronic_records officials document_typologies gdo_tablas process_activities process_steps holidays"
+TABLAS="document_tasks documents dependencies document_traces document_actions document_electronic_record document_suspensions electronic_records officials document_typologies gdo_tablas process_activities process_steps holidays"
 
 # Mismo criterio que los scripts de despliegue: el compose de producción si existe (preparar-local.sh fija el suyo).
 if [ -z "${COMPOSE_FILE:-}" ] && [ -f docker-compose.dockploy.yml ]; then
