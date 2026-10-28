@@ -7,7 +7,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 DOCKER="${DOCKER:-docker}"
-TABLAS="document_tasks"
+TABLAS="document_tasks documents dependencies"
 
 psql_sgd() { "$DOCKER" compose exec -T postgres psql -v ON_ERROR_STOP=1 -U sgd -d sgd -tAc "$1" < /dev/null; }
 
