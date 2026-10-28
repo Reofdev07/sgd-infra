@@ -21,18 +21,20 @@ fi
 del_env() { [ -f .env ] && grep -E "^$1=" .env | tail -1 | cut -d= -f2- | tr -d '\r' || true; }
 REP_PASS="${POWERSYNC_REP_PASSWORD:-$(del_env POWERSYNC_REP_PASSWORD)}"
 STORAGE_PASS="${POWERSYNC_STORAGE_PASSWORD:-$(del_env POWERSYNC_STORAGE_PASSWORD)}"
+# El token de administración no lo usa este script, pero PowerSync no debe arrancar sin uno fuerte.
+ADMIN_TOKEN="${POWERSYNC_ADMIN_TOKEN:-$(del_env POWERSYNC_ADMIN_TOKEN)}"
 PG_USER="${POSTGRES_USER:-$(del_env POSTGRES_USER)}"; PG_USER="${PG_USER:-sgd}"
 PG_DB="${POSTGRES_DB:-$(del_env POSTGRES_DB)}"; PG_DB="${PG_DB:-sgd}"
 
-for nombre in REP_PASS STORAGE_PASS; do
+for nombre in REP_PASS STORAGE_PASS ADMIN_TOKEN; do
     valor="${!nombre}"
     if [ -z "$valor" ]; then
-        echo "Falta POWERSYNC_${nombre%_PASS}_PASSWORD en sgd-infra/.env (genere una con: openssl rand -hex 24)." >&2
+        echo "Falta ${nombre} (POWERSYNC_*) en sgd-infra/.env (genere uno con: openssl rand -hex 24)." >&2
         exit 1
     fi
     # Van dentro de SQL: solo letras, números, - y _ (openssl rand -hex 24 cumple).
     if ! [[ "$valor" =~ ^[A-Za-z0-9_-]{16,}$ ]]; then
-        echo "POWERSYNC_${nombre%_PASS}_PASSWORD debe tener al menos 16 caracteres: letras, números, - o _." >&2
+        echo "${nombre} (POWERSYNC_*) debe tener al menos 16 caracteres: letras, números, - o _." >&2
         exit 1
     fi
 done

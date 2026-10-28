@@ -48,7 +48,7 @@ services:
       # En local Laravel corre en el equipo con `php artisan serve` (puerto 8000).
       PS_JWKS_URL: http://host.docker.internal:8000/api/sync/jwks
       PS_PORT: "8080"
-      PS_ADMIN_TOKEN: solo-local
+      PS_ADMIN_TOKEN: solo-local-desarrollo
     volumes:
       - ./powersync:/config:ro
     networks:
