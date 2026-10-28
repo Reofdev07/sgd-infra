@@ -31,7 +31,7 @@ echo "Preparación de la base (repetible)"
 check "preparar-local.sh corre" bash powersync/preparar-local.sh
 check "preparar-local.sh se puede repetir" bash powersync/preparar-local.sh
 check "publicación powersync solo con las tablas que se sincronizan" \
-    test "$(psql_sgd "select string_agg(tablename, ',' order by tablename) from pg_publication_tables where pubname = 'powersync'")" = "dependencies,document_actions,document_electronic_record,document_suspensions,document_tasks,document_traces,document_typologies,documents,electronic_records,gdo_tablas,holidays,officials,process_activities,process_steps"
+    test "$(psql_sgd "select string_agg(tablename, ',' order by tablename) from pg_publication_tables where pubname = 'powersync'")" = "dependencies,document_actions,document_electronic_record,document_suspensions,document_tasks,document_traces,document_typologies,documents,electronic_records,gdo_tablas,holidays,officials,process_activities,process_steps,sync_recientes"
 # Una tabla publicada sin clave primaria ni identidad de réplica hace que Postgres rechace sus UPDATE y DELETE: la app
 # dejaría de poder cambiarla (document_electronic_record, Etapa 3).
 check "toda tabla publicada admite UPDATE y DELETE (clave primaria o identidad de réplica)" \

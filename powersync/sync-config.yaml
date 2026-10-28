@@ -114,7 +114,8 @@ streams:
         AND (responsible_user_id = CAST(auth.user_id() AS integer)
              OR id IN (SELECT document_id FROM document_tasks
                        WHERE assigned_user_id = CAST(auth.user_id() AS integer) AND deleted_at IS NULL
-                         AND (status = 'pending' OR status = 'in_progress' OR status = 'blocked')))
+                         AND (status = 'pending' OR status = 'in_progress' OR status = 'blocked'))
+             OR id IN (SELECT document_id FROM sync_recientes WHERE user_id = CAST(auth.user_id() AS integer)))
 
   web_documento_datos:
     auto_subscribe: true
@@ -130,7 +131,8 @@ streams:
         AND (responsible_user_id = CAST(auth.user_id() AS integer)
              OR id IN (SELECT document_id FROM document_tasks
                        WHERE assigned_user_id = CAST(auth.user_id() AS integer) AND deleted_at IS NULL
-                         AND (status = 'pending' OR status = 'in_progress' OR status = 'blocked')))
+                         AND (status = 'pending' OR status = 'in_progress' OR status = 'blocked'))
+             OR id IN (SELECT document_id FROM sync_recientes WHERE user_id = CAST(auth.user_id() AS integer)))
 
   web_tareas:
     auto_subscribe: true
@@ -277,7 +279,8 @@ streams:
       FROM document_traces AS trazas
       WHERE auth.parameter('perfil') = 'web' AND deleted_at IS NULL AND doc_deleted = false
         AND doc_branch_id = auth.parameter('sede') AND doc_sync_en_ventana = true
-        AND doc_responsible_user_id = CAST(auth.user_id() AS integer)
+        AND (doc_responsible_user_id = CAST(auth.user_id() AS integer)
+             OR document_id IN (SELECT document_id FROM sync_recientes WHERE user_id = CAST(auth.user_id() AS integer)))
         AND (doc_sensitivity_level IS NULL
              OR (doc_sensitivity_level != 'clasificado' AND doc_sensitivity_level != 'reservado'
                  AND doc_sensitivity_level != 'confidencial' AND doc_sensitivity_level != 'restricted'))
@@ -289,7 +292,8 @@ streams:
       FROM document_traces AS traza_datos
       WHERE auth.parameter('perfil') = 'web' AND deleted_at IS NULL AND doc_deleted = false
         AND doc_branch_id = auth.parameter('sede') AND doc_sync_en_ventana = true
-        AND doc_responsible_user_id = CAST(auth.user_id() AS integer)
+        AND (doc_responsible_user_id = CAST(auth.user_id() AS integer)
+             OR document_id IN (SELECT document_id FROM sync_recientes WHERE user_id = CAST(auth.user_id() AS integer)))
         AND (doc_sensitivity_level IS NULL
              OR (doc_sensitivity_level != 'clasificado' AND doc_sensitivity_level != 'reservado'
                  AND doc_sensitivity_level != 'confidencial' AND doc_sensitivity_level != 'restricted'))
@@ -303,7 +307,8 @@ streams:
       FROM document_actions AS actuaciones
       WHERE auth.parameter('perfil') = 'web' AND deleted_at IS NULL AND doc_deleted = false
         AND doc_branch_id = auth.parameter('sede') AND doc_sync_en_ventana = true
-        AND doc_responsible_user_id = CAST(auth.user_id() AS integer)
+        AND (doc_responsible_user_id = CAST(auth.user_id() AS integer)
+             OR document_id IN (SELECT document_id FROM sync_recientes WHERE user_id = CAST(auth.user_id() AS integer)))
         AND (doc_sensitivity_level IS NULL
              OR (doc_sensitivity_level != 'clasificado' AND doc_sensitivity_level != 'reservado'
                  AND doc_sensitivity_level != 'confidencial' AND doc_sensitivity_level != 'restricted'))
@@ -315,7 +320,8 @@ streams:
       FROM document_actions AS actuacion_datos
       WHERE auth.parameter('perfil') = 'web' AND deleted_at IS NULL AND doc_deleted = false
         AND doc_branch_id = auth.parameter('sede') AND doc_sync_en_ventana = true
-        AND doc_responsible_user_id = CAST(auth.user_id() AS integer)
+        AND (doc_responsible_user_id = CAST(auth.user_id() AS integer)
+             OR document_id IN (SELECT document_id FROM sync_recientes WHERE user_id = CAST(auth.user_id() AS integer)))
         AND (doc_sensitivity_level IS NULL
              OR (doc_sensitivity_level != 'clasificado' AND doc_sensitivity_level != 'reservado'
                  AND doc_sensitivity_level != 'confidencial' AND doc_sensitivity_level != 'restricted'))
@@ -329,7 +335,8 @@ streams:
       FROM document_suspensions AS suspensiones
       WHERE auth.parameter('perfil') = 'web' AND doc_deleted = false
         AND doc_branch_id = auth.parameter('sede') AND doc_sync_en_ventana = true
-        AND doc_responsible_user_id = CAST(auth.user_id() AS integer)
+        AND (doc_responsible_user_id = CAST(auth.user_id() AS integer)
+             OR document_id IN (SELECT document_id FROM sync_recientes WHERE user_id = CAST(auth.user_id() AS integer)))
         AND (doc_sensitivity_level IS NULL
              OR (doc_sensitivity_level != 'clasificado' AND doc_sensitivity_level != 'reservado'
                  AND doc_sensitivity_level != 'confidencial' AND doc_sensitivity_level != 'restricted'))
