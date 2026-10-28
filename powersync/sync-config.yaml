@@ -10,6 +10,9 @@
 #  - Niveles con != encadenados: PowerSync no acepta NOT IN con lista. Un nivel nulo cuenta como no protegido, igual
 #    que en DocumentPolicy.
 #  - Los ids van como texto (lo exige la base local).
+#  - Tareas: se filtran con la copia de su radicado (doc_*, triggers de la migración 2026_10_28_100000), no con
+#    subconsulta: una subconsulta arma una cubeta por radicado y PowerSync admite 1.000 por usuario. En la web, los
+#    radicados de «mis tareas» sí van por subconsulta, acotada a las tareas abiertas (DocumentTask::OPEN_STATUSES).
 config:
   edition: 3
 streams:
@@ -57,33 +60,31 @@ streams:
       SELECT CAST(id AS text) AS id, document_id, process_activity_id, assigned_user_id, status, completed_at,
              start_date, due_date, version, created_at, updated_at
       FROM document_tasks AS tareas
-      WHERE auth.parameter('perfil') = 'escritorio' AND deleted_at IS NULL
-        AND document_id IN (SELECT id FROM documents
-          WHERE branch_id = auth.parameter('sede') AND deleted_at IS NULL AND sync_en_ventana = true
-            AND (sensitivity_level IS NULL
-                 OR (sensitivity_level != 'clasificado' AND sensitivity_level != 'reservado'
-                     AND sensitivity_level != 'confidencial' AND sensitivity_level != 'restricted')
-                 OR auth.parameter('clasif') = 1 OR auth.parameter('admin_sede') = 1
-                 OR responsible_user_id = CAST(auth.user_id() AS integer)
-                 OR dependence_id IN (SELECT value FROM json_each(auth.parameter('deps')))))
+      WHERE auth.parameter('perfil') = 'escritorio' AND deleted_at IS NULL AND doc_deleted = false
+        AND doc_branch_id = auth.parameter('sede') AND doc_sync_en_ventana = true
+        AND (doc_sensitivity_level IS NULL
+             OR (doc_sensitivity_level != 'clasificado' AND doc_sensitivity_level != 'reservado'
+                 AND doc_sensitivity_level != 'confidencial' AND doc_sensitivity_level != 'restricted')
+             OR auth.parameter('clasif') = 1 OR auth.parameter('admin_sede') = 1
+             OR doc_responsible_user_id = CAST(auth.user_id() AS integer)
+             OR doc_dependence_id IN (SELECT value FROM json_each(auth.parameter('deps'))))
 
   escritorio_tarea_notas:
     auto_subscribe: true
     query: >
       SELECT CAST(id AS text) AS id, notes
       FROM document_tasks AS tarea_notas
-      WHERE auth.parameter('perfil') = 'escritorio' AND deleted_at IS NULL
-        AND document_id IN (SELECT id FROM documents
-          WHERE branch_id = auth.parameter('sede') AND deleted_at IS NULL AND sync_en_ventana = true
-            AND (sensitivity_level IS NULL
-                 OR (sensitivity_level != 'clasificado' AND sensitivity_level != 'reservado'
-                     AND sensitivity_level != 'confidencial' AND sensitivity_level != 'restricted')
-                 OR auth.parameter('clasif') = 1 OR auth.parameter('admin_sede') = 1
-                 OR responsible_user_id = CAST(auth.user_id() AS integer)
-                 OR dependence_id IN (SELECT value FROM json_each(auth.parameter('deps'))))
-            AND (sensitivity_level IS NULL
-                 OR (sensitivity_level != 'restricted' AND sensitivity_level != 'reservado'
-                     AND sensitivity_level != 'confidencial')))
+      WHERE auth.parameter('perfil') = 'escritorio' AND deleted_at IS NULL AND doc_deleted = false
+        AND doc_branch_id = auth.parameter('sede') AND doc_sync_en_ventana = true
+        AND (doc_sensitivity_level IS NULL
+             OR (doc_sensitivity_level != 'clasificado' AND doc_sensitivity_level != 'reservado'
+                 AND doc_sensitivity_level != 'confidencial' AND doc_sensitivity_level != 'restricted')
+             OR auth.parameter('clasif') = 1 OR auth.parameter('admin_sede') = 1
+             OR doc_responsible_user_id = CAST(auth.user_id() AS integer)
+             OR doc_dependence_id IN (SELECT value FROM json_each(auth.parameter('deps'))))
+        AND (doc_sensitivity_level IS NULL
+             OR (doc_sensitivity_level != 'restricted' AND doc_sensitivity_level != 'reservado'
+                 AND doc_sensitivity_level != 'confidencial'))
 
   escritorio_dependencias:
     auto_subscribe: true
@@ -110,7 +111,8 @@ streams:
                  AND sensitivity_level != 'confidencial' AND sensitivity_level != 'restricted'))
         AND (responsible_user_id = CAST(auth.user_id() AS integer)
              OR id IN (SELECT document_id FROM document_tasks
-                       WHERE assigned_user_id = CAST(auth.user_id() AS integer) AND deleted_at IS NULL))
+                       WHERE assigned_user_id = CAST(auth.user_id() AS integer) AND deleted_at IS NULL
+                         AND (status = 'pending' OR status = 'in_progress' OR status = 'blocked')))
 
   web_documento_datos:
     auto_subscribe: true
@@ -125,7 +127,8 @@ streams:
                  AND sensitivity_level != 'confidencial' AND sensitivity_level != 'restricted'))
         AND (responsible_user_id = CAST(auth.user_id() AS integer)
              OR id IN (SELECT document_id FROM document_tasks
-                       WHERE assigned_user_id = CAST(auth.user_id() AS integer) AND deleted_at IS NULL))
+                       WHERE assigned_user_id = CAST(auth.user_id() AS integer) AND deleted_at IS NULL
+                         AND (status = 'pending' OR status = 'in_progress' OR status = 'blocked')))
 
   web_tareas:
     auto_subscribe: true
@@ -134,12 +137,11 @@ streams:
              start_date, due_date, version, created_at, updated_at
       FROM document_tasks AS tareas
       WHERE auth.parameter('perfil') = 'web' AND assigned_user_id = CAST(auth.user_id() AS integer)
-        AND deleted_at IS NULL
-        AND document_id IN (SELECT id FROM documents
-          WHERE branch_id = auth.parameter('sede') AND deleted_at IS NULL AND sync_en_ventana = true
-            AND (sensitivity_level IS NULL
-                 OR (sensitivity_level != 'clasificado' AND sensitivity_level != 'reservado'
-                     AND sensitivity_level != 'confidencial' AND sensitivity_level != 'restricted')))
+        AND deleted_at IS NULL AND doc_deleted = false AND doc_branch_id = auth.parameter('sede')
+        AND doc_sync_en_ventana = true
+        AND (doc_sensitivity_level IS NULL
+             OR (doc_sensitivity_level != 'clasificado' AND doc_sensitivity_level != 'reservado'
+                 AND doc_sensitivity_level != 'confidencial' AND doc_sensitivity_level != 'restricted'))
 
   web_tarea_notas:
     auto_subscribe: true
@@ -147,12 +149,11 @@ streams:
       SELECT CAST(id AS text) AS id, notes
       FROM document_tasks AS tarea_notas
       WHERE auth.parameter('perfil') = 'web' AND assigned_user_id = CAST(auth.user_id() AS integer)
-        AND deleted_at IS NULL
-        AND document_id IN (SELECT id FROM documents
-          WHERE branch_id = auth.parameter('sede') AND deleted_at IS NULL AND sync_en_ventana = true
-            AND (sensitivity_level IS NULL
-                 OR (sensitivity_level != 'clasificado' AND sensitivity_level != 'reservado'
-                     AND sensitivity_level != 'confidencial' AND sensitivity_level != 'restricted')))
+        AND deleted_at IS NULL AND doc_deleted = false AND doc_branch_id = auth.parameter('sede')
+        AND doc_sync_en_ventana = true
+        AND (doc_sensitivity_level IS NULL
+             OR (doc_sensitivity_level != 'clasificado' AND doc_sensitivity_level != 'reservado'
+                 AND doc_sensitivity_level != 'confidencial' AND doc_sensitivity_level != 'restricted'))
 
   web_dependencias:
     auto_subscribe: true
