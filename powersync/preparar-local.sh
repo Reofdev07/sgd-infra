@@ -5,4 +5,4 @@ set -euo pipefail
 cd "$(dirname "$0")"
 POWERSYNC_REP_PASSWORD=powersync_rep_local POWERSYNC_STORAGE_PASSWORD=powersync_storage_local \
     POWERSYNC_ADMIN_TOKEN=solo-local-desarrollo \
-    POSTGRES_USER=sgd POSTGRES_DB=sgd bash ./preparar.sh
+    POSTGRES_USER=sgd POSTGRES_DB=sgd COMPOSE_FILE=docker-compose.yml:docker-compose.override.yml bash ./preparar.sh

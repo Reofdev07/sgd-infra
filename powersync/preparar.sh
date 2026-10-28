@@ -14,7 +14,8 @@ cd "$(dirname "$0")/.."
 DOCKER="${DOCKER:-docker}"
 TABLAS="document_tasks documents dependencies"
 
-if [ -z "${COMPOSE_FILE:-}" ] && [ -f docker-compose.dockploy.yml ] && [ ! -f docker-compose.override.yml ]; then
+# Mismo criterio que los scripts de despliegue: el compose de producción si existe (preparar-local.sh fija el suyo).
+if [ -z "${COMPOSE_FILE:-}" ] && [ -f docker-compose.dockploy.yml ]; then
     export COMPOSE_FILE=docker-compose.dockploy.yml
 fi
 
