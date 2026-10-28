@@ -10,6 +10,8 @@
 #  - Niveles con != encadenados: PowerSync no acepta NOT IN con lista. Un nivel nulo cuenta como no protegido, igual
 #    que en DocumentPolicy.
 #  - Los ids van como texto (lo exige la base local).
+#  - Catálogos, actividades y festivos no dependen de la sede, pero exigen un token con entidad: uno sin alcance (el
+#    del super administrador, que no sincroniza) no recibe nada.
 #  - Tareas: se filtran con la copia de su radicado (doc_*, triggers de la migración 2026_10_28_100000), no con
 #    subconsulta: una subconsulta arma una cubeta por radicado y PowerSync admite 1.000 por usuario. En la web, los
 #    radicados de «mis tareas» sí van por subconsulta, acotada a las tareas abiertas (DocumentTask::OPEN_STATUSES).
@@ -161,3 +163,217 @@ streams:
       SELECT CAST(id AS text) AS id, name, code, acronym, status, branch_id, location_id, entity_id
       FROM dependencies AS dependencias
       WHERE auth.parameter('perfil') = 'web' AND branch_id = auth.parameter('sede') AND deleted_at IS NULL
+
+  # ── Etapa 3: historial, actuaciones y expedientes (copia doc_* del radicado, sin subconsulta) ──────────────────
+  escritorio_trazas:
+    auto_subscribe: true
+    query: >
+      SELECT CAST(id AS text) AS id, document_id, user_id, event_type, destination_dependence_id, assigned_user_id,
+             created_at, updated_at
+      FROM document_traces AS trazas
+      WHERE auth.parameter('perfil') = 'escritorio' AND deleted_at IS NULL AND doc_deleted = false
+        AND doc_branch_id = auth.parameter('sede') AND doc_sync_en_ventana = true
+        AND (doc_sensitivity_level IS NULL
+             OR (doc_sensitivity_level != 'clasificado' AND doc_sensitivity_level != 'reservado'
+                 AND doc_sensitivity_level != 'confidencial' AND doc_sensitivity_level != 'restricted')
+             OR auth.parameter('clasif') = 1 OR auth.parameter('admin_sede') = 1
+             OR doc_responsible_user_id = CAST(auth.user_id() AS integer)
+             OR doc_dependence_id IN (SELECT value FROM json_each(auth.parameter('deps'))))
+
+  escritorio_traza_datos:
+    auto_subscribe: true
+    query: >
+      SELECT CAST(id AS text) AS id, description, observation, details
+      FROM document_traces AS traza_datos
+      WHERE auth.parameter('perfil') = 'escritorio' AND deleted_at IS NULL AND doc_deleted = false
+        AND doc_branch_id = auth.parameter('sede') AND doc_sync_en_ventana = true
+        AND (doc_sensitivity_level IS NULL
+             OR (doc_sensitivity_level != 'clasificado' AND doc_sensitivity_level != 'reservado'
+                 AND doc_sensitivity_level != 'confidencial' AND doc_sensitivity_level != 'restricted')
+             OR auth.parameter('clasif') = 1 OR auth.parameter('admin_sede') = 1
+             OR doc_responsible_user_id = CAST(auth.user_id() AS integer)
+             OR doc_dependence_id IN (SELECT value FROM json_each(auth.parameter('deps'))))
+        AND (doc_sensitivity_level IS NULL
+             OR (doc_sensitivity_level != 'restricted' AND doc_sensitivity_level != 'reservado'
+                 AND doc_sensitivity_level != 'confidencial'))
+
+  escritorio_actuaciones:
+    auto_subscribe: true
+    query: >
+      SELECT CAST(id AS text) AS id, document_id, type, status, recipient_id, copy_recipient_id, delivery_channel,
+             new_deadline_at, transferred_part, drafted_by, reviewed_by, approved_by, submitted_at, approved_at,
+             sent_at, delivered_at, output_document_id, created_at, updated_at
+      FROM document_actions AS actuaciones
+      WHERE auth.parameter('perfil') = 'escritorio' AND deleted_at IS NULL AND doc_deleted = false
+        AND doc_branch_id = auth.parameter('sede') AND doc_sync_en_ventana = true
+        AND (doc_sensitivity_level IS NULL
+             OR (doc_sensitivity_level != 'clasificado' AND doc_sensitivity_level != 'reservado'
+                 AND doc_sensitivity_level != 'confidencial' AND doc_sensitivity_level != 'restricted')
+             OR auth.parameter('clasif') = 1 OR auth.parameter('admin_sede') = 1
+             OR doc_responsible_user_id = CAST(auth.user_id() AS integer)
+             OR doc_dependence_id IN (SELECT value FROM json_each(auth.parameter('deps'))))
+
+  escritorio_actuacion_datos:
+    auto_subscribe: true
+    query: >
+      SELECT CAST(id AS text) AS id, subject, body, review_notes, reason, delivery_info, cc_emails, delivery_email
+      FROM document_actions AS actuacion_datos
+      WHERE auth.parameter('perfil') = 'escritorio' AND deleted_at IS NULL AND doc_deleted = false
+        AND doc_branch_id = auth.parameter('sede') AND doc_sync_en_ventana = true
+        AND (doc_sensitivity_level IS NULL
+             OR (doc_sensitivity_level != 'clasificado' AND doc_sensitivity_level != 'reservado'
+                 AND doc_sensitivity_level != 'confidencial' AND doc_sensitivity_level != 'restricted')
+             OR auth.parameter('clasif') = 1 OR auth.parameter('admin_sede') = 1
+             OR doc_responsible_user_id = CAST(auth.user_id() AS integer)
+             OR doc_dependence_id IN (SELECT value FROM json_each(auth.parameter('deps'))))
+        AND (doc_sensitivity_level IS NULL
+             OR (doc_sensitivity_level != 'restricted' AND doc_sensitivity_level != 'reservado'
+                 AND doc_sensitivity_level != 'confidencial'))
+
+  escritorio_expedientes:
+    auto_subscribe: true
+    query: >
+      SELECT CAST(id AS text) AS id, record_number, title, series_id, sub_series_id, branch_id, dependence_id,
+             location_id, status, opened_at, closed_at, retention_start_at, total_folios, total_documents,
+             current_phase, ag_expires_at, ac_expires_at, version, created_at, updated_at
+      FROM electronic_records AS expedientes
+      WHERE auth.parameter('perfil') = 'escritorio' AND branch_id = auth.parameter('sede') AND deleted_at IS NULL
+
+  escritorio_expediente_documentos:
+    auto_subscribe: true
+    query: >
+      SELECT document_id || '-' || electronic_record_id AS id, document_id, electronic_record_id, folio_number,
+             doc_order, link_type, linked_at
+      FROM document_electronic_record AS expediente_documentos
+      WHERE auth.parameter('perfil') = 'escritorio' AND doc_deleted = false
+        AND doc_branch_id = auth.parameter('sede') AND doc_sync_en_ventana = true
+        AND (doc_sensitivity_level IS NULL
+             OR (doc_sensitivity_level != 'clasificado' AND doc_sensitivity_level != 'reservado'
+                 AND doc_sensitivity_level != 'confidencial' AND doc_sensitivity_level != 'restricted')
+             OR auth.parameter('clasif') = 1 OR auth.parameter('admin_sede') = 1
+             OR doc_responsible_user_id = CAST(auth.user_id() AS integer)
+             OR doc_dependence_id IN (SELECT value FROM json_each(auth.parameter('deps'))))
+
+  web_trazas:
+    auto_subscribe: true
+    query: >
+      SELECT CAST(id AS text) AS id, document_id, user_id, event_type, destination_dependence_id, assigned_user_id,
+             created_at, updated_at
+      FROM document_traces AS trazas
+      WHERE auth.parameter('perfil') = 'web' AND deleted_at IS NULL AND doc_deleted = false
+        AND doc_branch_id = auth.parameter('sede') AND doc_sync_en_ventana = true
+        AND doc_responsible_user_id = CAST(auth.user_id() AS integer)
+        AND (doc_sensitivity_level IS NULL
+             OR (doc_sensitivity_level != 'clasificado' AND doc_sensitivity_level != 'reservado'
+                 AND doc_sensitivity_level != 'confidencial' AND doc_sensitivity_level != 'restricted'))
+
+  web_traza_datos:
+    auto_subscribe: true
+    query: >
+      SELECT CAST(id AS text) AS id, description, observation, details
+      FROM document_traces AS traza_datos
+      WHERE auth.parameter('perfil') = 'web' AND deleted_at IS NULL AND doc_deleted = false
+        AND doc_branch_id = auth.parameter('sede') AND doc_sync_en_ventana = true
+        AND doc_responsible_user_id = CAST(auth.user_id() AS integer)
+        AND (doc_sensitivity_level IS NULL
+             OR (doc_sensitivity_level != 'clasificado' AND doc_sensitivity_level != 'reservado'
+                 AND doc_sensitivity_level != 'confidencial' AND doc_sensitivity_level != 'restricted'))
+
+  web_actuaciones:
+    auto_subscribe: true
+    query: >
+      SELECT CAST(id AS text) AS id, document_id, type, status, recipient_id, copy_recipient_id, delivery_channel,
+             new_deadline_at, transferred_part, drafted_by, reviewed_by, approved_by, submitted_at, approved_at,
+             sent_at, delivered_at, output_document_id, created_at, updated_at
+      FROM document_actions AS actuaciones
+      WHERE auth.parameter('perfil') = 'web' AND deleted_at IS NULL AND doc_deleted = false
+        AND doc_branch_id = auth.parameter('sede') AND doc_sync_en_ventana = true
+        AND doc_responsible_user_id = CAST(auth.user_id() AS integer)
+        AND (doc_sensitivity_level IS NULL
+             OR (doc_sensitivity_level != 'clasificado' AND doc_sensitivity_level != 'reservado'
+                 AND doc_sensitivity_level != 'confidencial' AND doc_sensitivity_level != 'restricted'))
+
+  web_actuacion_datos:
+    auto_subscribe: true
+    query: >
+      SELECT CAST(id AS text) AS id, subject, body, review_notes, reason, delivery_info, cc_emails, delivery_email
+      FROM document_actions AS actuacion_datos
+      WHERE auth.parameter('perfil') = 'web' AND deleted_at IS NULL AND doc_deleted = false
+        AND doc_branch_id = auth.parameter('sede') AND doc_sync_en_ventana = true
+        AND doc_responsible_user_id = CAST(auth.user_id() AS integer)
+        AND (doc_sensitivity_level IS NULL
+             OR (doc_sensitivity_level != 'clasificado' AND doc_sensitivity_level != 'reservado'
+                 AND doc_sensitivity_level != 'confidencial' AND doc_sensitivity_level != 'restricted'))
+
+  # ── Etapa 3: nombres y catálogos (los dos perfiles; una instancia = una alcaldía) ─────────────────────────────
+  escritorio_funcionarios:
+    auto_subscribe: true
+    query: >
+      SELECT CAST(id AS text) AS id, user_id, name, position, branch_id, status
+      FROM officials AS funcionarios
+      WHERE auth.parameter('perfil') = 'escritorio' AND branch_id = auth.parameter('sede') AND deleted_at IS NULL
+
+  escritorio_tipologias:
+    auto_subscribe: true
+    query: >
+      SELECT CAST(id AS text) AS id, name, code, response_days, day_type, is_pqrsd, series_id, sub_series_id,
+             status, entity_id
+      FROM document_typologies AS tipologias
+      WHERE auth.parameter('perfil') = 'escritorio' AND entity_id = auth.parameter('entidad')
+
+  escritorio_catalogos:
+    auto_subscribe: true
+    query: >
+      SELECT CAST(id AS text) AS id, class_table_id, name, acronym, type, class_acronym
+      FROM gdo_tablas AS catalogos
+      WHERE auth.parameter('perfil') = 'escritorio' AND auth.parameter('entidad') IS NOT NULL AND deleted_at IS NULL
+
+  escritorio_actividades:
+    auto_subscribe: true
+    query: >
+      SELECT CAST(id AS text) AS id, process_step_id, name, "order" AS orden, status
+      FROM process_activities AS actividades
+      WHERE auth.parameter('perfil') = 'escritorio' AND auth.parameter('entidad') IS NOT NULL AND deleted_at IS NULL
+
+  escritorio_festivos:
+    auto_subscribe: true
+    query: >
+      SELECT CAST(id AS text) AS id, date, name, entity_id, branch_id
+      FROM holidays AS festivos
+      WHERE auth.parameter('perfil') = 'escritorio' AND auth.parameter('entidad') IS NOT NULL AND (entity_id = auth.parameter('entidad') OR entity_id IS NULL)
+
+  web_funcionarios:
+    auto_subscribe: true
+    query: >
+      SELECT CAST(id AS text) AS id, user_id, name, position, branch_id, status
+      FROM officials AS funcionarios
+      WHERE auth.parameter('perfil') = 'web' AND branch_id = auth.parameter('sede') AND deleted_at IS NULL
+
+  web_tipologias:
+    auto_subscribe: true
+    query: >
+      SELECT CAST(id AS text) AS id, name, code, response_days, day_type, is_pqrsd, series_id, sub_series_id,
+             status, entity_id
+      FROM document_typologies AS tipologias
+      WHERE auth.parameter('perfil') = 'web' AND entity_id = auth.parameter('entidad')
+
+  web_catalogos:
+    auto_subscribe: true
+    query: >
+      SELECT CAST(id AS text) AS id, class_table_id, name, acronym, type, class_acronym
+      FROM gdo_tablas AS catalogos
+      WHERE auth.parameter('perfil') = 'web' AND auth.parameter('entidad') IS NOT NULL AND deleted_at IS NULL
+
+  web_actividades:
+    auto_subscribe: true
+    query: >
+      SELECT CAST(id AS text) AS id, process_step_id, name, "order" AS orden, status
+      FROM process_activities AS actividades
+      WHERE auth.parameter('perfil') = 'web' AND auth.parameter('entidad') IS NOT NULL AND deleted_at IS NULL
+
+  web_festivos:
+    auto_subscribe: true
+    query: >
+      SELECT CAST(id AS text) AS id, date, name, entity_id, branch_id
+      FROM holidays AS festivos
+      WHERE auth.parameter('perfil') = 'web' AND auth.parameter('entidad') IS NOT NULL AND (entity_id = auth.parameter('entidad') OR entity_id IS NULL)

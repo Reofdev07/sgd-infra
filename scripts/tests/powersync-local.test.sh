@@ -31,7 +31,11 @@ echo "Preparación de la base (repetible)"
 check "preparar-local.sh corre" bash powersync/preparar-local.sh
 check "preparar-local.sh se puede repetir" bash powersync/preparar-local.sh
 check "publicación powersync solo con las tablas que se sincronizan" \
-    test "$(psql_sgd "select string_agg(tablename, ',' order by tablename) from pg_publication_tables where pubname = 'powersync'")" = "dependencies,document_tasks,documents"
+    test "$(psql_sgd "select string_agg(tablename, ',' order by tablename) from pg_publication_tables where pubname = 'powersync'")" = "dependencies,document_actions,document_electronic_record,document_tasks,document_traces,document_typologies,documents,electronic_records,gdo_tablas,holidays,officials,process_activities"
+# Una tabla publicada sin clave primaria ni identidad de réplica hace que Postgres rechace sus UPDATE y DELETE: la app
+# dejaría de poder cambiarla (document_electronic_record, Etapa 3).
+check "toda tabla publicada admite UPDATE y DELETE (clave primaria o identidad de réplica)" \
+    test "$(psql_sgd "select count(*) from pg_publication_tables pt join pg_class c on c.relname = pt.tablename join pg_namespace n on n.oid = c.relnamespace and n.nspname = pt.schemaname where pt.pubname = 'powersync' and c.relreplident = 'd' and not exists (select 1 from pg_index i where i.indrelid = c.oid and i.indisprimary)")" = "0"
 check "rol powersync_rep con REPLICATION" test "$(psql_sgd "select rolreplication from pg_roles where rolname = 'powersync_rep'")" = "t"
 check "base powersync_storage existe" test "$(psql_sgd "select count(*) from pg_database where datname = 'powersync_storage'")" = "1"
 
