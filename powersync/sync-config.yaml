@@ -202,9 +202,9 @@ streams:
   escritorio_actuaciones:
     auto_subscribe: true
     query: >
-      SELECT CAST(id AS text) AS id, document_id, type, status, recipient_id, copy_recipient_id, delivery_channel,
-             new_deadline_at, transferred_part, drafted_by, reviewed_by, approved_by, submitted_at, approved_at,
-             sent_at, delivered_at, output_document_id, created_at, updated_at
+      SELECT CAST(id AS text) AS id, document_id, type, status, version, recipient_id, copy_recipient_id,
+             delivery_channel, new_deadline_at, transferred_part, drafted_by, reviewed_by, approved_by, submitted_at,
+             approved_at, sent_at, delivered_at, output_document_id, created_at, updated_at
       FROM document_actions AS actuaciones
       WHERE auth.parameter('perfil') = 'escritorio' AND deleted_at IS NULL AND doc_deleted = false
         AND doc_branch_id = auth.parameter('sede') AND doc_sync_en_ventana = true
@@ -301,9 +301,9 @@ streams:
   web_actuaciones:
     auto_subscribe: true
     query: >
-      SELECT CAST(id AS text) AS id, document_id, type, status, recipient_id, copy_recipient_id, delivery_channel,
-             new_deadline_at, transferred_part, drafted_by, reviewed_by, approved_by, submitted_at, approved_at,
-             sent_at, delivered_at, output_document_id, created_at, updated_at
+      SELECT CAST(id AS text) AS id, document_id, type, status, version, recipient_id, copy_recipient_id,
+             delivery_channel, new_deadline_at, transferred_part, drafted_by, reviewed_by, approved_by, submitted_at,
+             approved_at, sent_at, delivered_at, output_document_id, created_at, updated_at
       FROM document_actions AS actuaciones
       WHERE auth.parameter('perfil') = 'web' AND deleted_at IS NULL AND doc_deleted = false
         AND doc_branch_id = auth.parameter('sede') AND doc_sync_en_ventana = true
