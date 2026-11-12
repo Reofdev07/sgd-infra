@@ -3,3 +3,6 @@
 !.env.example
 nginx/sgd-ssl.conf
 *.bak
+
+# Configuración local de Claude Code (puede tener tokens)
+.claude/
